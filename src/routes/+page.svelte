@@ -48,7 +48,7 @@
 
 <main class="page">
   <header>
-    <div class="brand">lapse</div>
+    <div class="spacer"></div>
     <a class="settings-link" href="/settings" aria-label="Settings">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"></circle>
@@ -119,13 +119,6 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-  }
-
-  .brand {
-    font-size: var(--t-sm);
-    color: var(--text-dim);
-    letter-spacing: 0.02em;
-    font-weight: 500;
   }
 
   .settings-link {

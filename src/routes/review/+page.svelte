@@ -106,9 +106,16 @@
       done();
       return;
     }
-    if (e.code === "Space" || e.key === " " || e.key === "Enter") {
+    if (e.code === "Space" || e.key === " ") {
       e.preventDefault();
-      flip();
+      if (!flipped) flip();
+      else rate(3); // Anki convention: space after flip = Good
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (!flipped) flip();
+      else rate(3);
       return;
     }
     if (!flipped) return;
@@ -170,7 +177,7 @@
 
   <footer>
     {#if current && !flipped}
-      <div class="hint dim">Press <kbd>space</kbd> to flip</div>
+      <div class="hint dim"><kbd>space</kbd> to flip</div>
     {:else if current && flipped}
       <div class="ratings">
         <button class="rate again" onclick={() => rate(1)}>

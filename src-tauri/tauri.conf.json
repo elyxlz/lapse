@@ -13,8 +13,13 @@
     "windows": [
       {
         "title": "lapse",
-        "width": 800,
-        "height": 600
+        "width": 760,
+        "height": 760,
+        "minWidth": 480,
+        "minHeight": 480,
+        "decorations": false,
+        "transparent": false,
+        "resizable": true
       }
     ],
     "security": {
