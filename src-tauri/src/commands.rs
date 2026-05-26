@@ -160,7 +160,10 @@ pub fn list_decks(app: AppHandle) -> Result<Vec<DeckSummary>, String> {
     let entries = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("db") {
+        // Accept both the canonical .lapse extension and the legacy .db
+        // files from before the rename (so existing decks still appear).
+        let ext = path.extension().and_then(|s| s.to_str());
+        if ext != Some("lapse") && ext != Some("db") {
             continue;
         }
         // Open briefly to summarize. Files that aren't valid lapse decks are

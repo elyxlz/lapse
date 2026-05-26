@@ -24,6 +24,9 @@ pub struct Card {
     pub reps: i64,
     pub lapses: i64,
     pub last_review: Option<i64>,
+    /// Index into the scheduler's LEARN_STEPS_MS ladder. None once the
+    /// card has graduated to Review (FSRS-managed).
+    pub learn_step: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,19 +89,25 @@ pub fn open(path: &Path) -> Result<Connection> {
 
 /// In-place migrations for older deck versions. Idempotent.
 fn migrate(conn: &Connection) -> Result<()> {
-    // v1 -> v2: add cards.audio_side. CREATE TABLE IF NOT EXISTS in
-    // schema.sql doesn't touch existing tables, so we need an explicit
-    // ALTER for decks that predate this column.
-    let has_audio_side: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM pragma_table_info('cards') WHERE name = 'audio_side'",
-        [],
-        |r| r.get(0),
-    )?;
-    if has_audio_side == 0 {
+    let has_col = |name: &str| -> Result<bool> {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('cards') WHERE name = ?1",
+            params![name],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    };
+
+    // v1 -> v2: cards.audio_side
+    if !has_col("audio_side")? {
         conn.execute("ALTER TABLE cards ADD COLUMN audio_side TEXT", [])?;
     }
+    // v2 -> v3: cards.learn_step
+    if !has_col("learn_step")? {
+        conn.execute("ALTER TABLE cards ADD COLUMN learn_step INTEGER", [])?;
+    }
     conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '2')",
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '3')",
         [],
     )?;
     Ok(())
@@ -214,7 +223,7 @@ pub fn stats(conn: &Connection, now: DateTime<Utc>) -> Result<DeckStats> {
 
 const CARD_SELECT: &str =
     "SELECT id, front, back, audio IS NOT NULL, audio_side, tags, \
-            state, due, stability, difficulty, reps, lapses, last_review \
+            state, due, stability, difficulty, reps, lapses, last_review, learn_step \
      FROM cards";
 
 pub fn next_due_card(conn: &Connection, now: DateTime<Utc>) -> Result<Option<Card>> {
@@ -250,6 +259,7 @@ fn row_to_card(row: &rusqlite::Row) -> rusqlite::Result<Card> {
         reps: row.get(10)?,
         lapses: row.get(11)?,
         last_review: row.get(12)?,
+        learn_step: row.get(13)?,
     })
 }
 
@@ -290,6 +300,7 @@ pub struct UpdatedCard {
     pub reps: i64,
     pub lapses: i64,
     pub last_review: i64,
+    pub learn_step: Option<i64>,
 }
 
 pub fn apply_review(
@@ -304,8 +315,8 @@ pub fn apply_review(
     let tx = conn.transaction()?;
     tx.execute(
         "UPDATE cards SET state = ?1, due = ?2, stability = ?3, difficulty = ?4,
-                          reps = ?5, lapses = ?6, last_review = ?7
-         WHERE id = ?8",
+                          reps = ?5, lapses = ?6, last_review = ?7, learn_step = ?8
+         WHERE id = ?9",
         params![
             updated.state,
             updated.due,
@@ -314,6 +325,7 @@ pub fn apply_review(
             updated.reps,
             updated.lapses,
             updated.last_review,
+            updated.learn_step,
             card_id,
         ],
     )?;

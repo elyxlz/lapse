@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS cards (
     difficulty    REAL    NOT NULL DEFAULT 0,
     reps          INTEGER NOT NULL DEFAULT 0,
     lapses        INTEGER NOT NULL DEFAULT 0,
-    last_review   INTEGER
+    last_review   INTEGER,
+    learn_step    INTEGER                        -- learning ladder index; NULL once graduated
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_due   ON cards(due);
@@ -164,7 +165,7 @@ def build_grammar_cards() -> list[tuple[str, str, str]]:
 
 
 def main() -> int:
-    out_path = Path(sys.argv[1] if len(sys.argv) > 1 else "lebanese.db")
+    out_path = Path(sys.argv[1] if len(sys.argv) > 1 else "lebanese.lapse")
     if out_path.exists():
         # Warn loudly if we're about to clobber a deck that already has
         # audio — re-running this script deletes the file outright and
@@ -199,7 +200,7 @@ def main() -> int:
         "INSERT INTO cards(front, back, tags) VALUES (?, ?, ?)",
         all_cards,
     )
-    conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '2')")
+    conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '3')")
     conn.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES ('name', 'Lebanese Arabic')"
     )

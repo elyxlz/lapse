@@ -18,3 +18,7 @@ vite.config.ts.timestamp-*
 *.db-journal
 *.db-wal
 *.db-shm
+*.lapse
+*.lapse-journal
+*.lapse-wal
+*.lapse-shm

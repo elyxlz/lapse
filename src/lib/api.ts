@@ -15,6 +15,7 @@ export interface Card {
   reps: number;
   lapses: number;
   last_review: number | null;
+  learn_step: number | null;
 }
 
 export interface DeckStats {
@@ -56,7 +57,7 @@ export async function pickDeckFile(): Promise<string | null> {
   const result = await openDialog({
     multiple: false,
     directory: false,
-    filters: [{ name: "lapse deck", extensions: ["db"] }],
+    filters: [{ name: "lapse deck", extensions: ["lapse", "db"] }],
   });
   return typeof result === "string" ? result : null;
 }

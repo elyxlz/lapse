@@ -31,7 +31,7 @@ builder, or to confirm the app still opens a fresh deck after schema
 changes.
 
 ```bash
-python3 .claude/skills/deck-builder/make_sample_deck.py sample.db
+python3 .claude/skills/deck-builder/make_sample_deck.py sample.lapse
 ```
 
 ### `import_lebanese.py` — example data-import script
@@ -62,9 +62,9 @@ wrapper — no signup, no key, no rate cap beyond the upstream service's
 throttling.
 
 ```bash
-uv run .claude/skills/deck-builder/fetch_edge_tts.py deck.db
+uv run .claude/skills/deck-builder/fetch_edge_tts.py deck.lapse
 # Pick a different voice:
-uv run .claude/skills/deck-builder/fetch_edge_tts.py deck.db fr-FR-DeniseNeural
+uv run .claude/skills/deck-builder/fetch_edge_tts.py deck.lapse fr-FR-DeniseNeural
 # Enumerate all voices:
 uv run edge-tts --list-voices
 ```
@@ -90,10 +90,10 @@ finished `.db` there:
 
 ```bash
 # Linux
-cp deck.db ~/.local/share/dev.lapse.app/decks/
+cp deck.lapse ~/.local/share/dev.lapse.app/decks/
 
 # macOS
-cp deck.db ~/Library/Application\ Support/dev.lapse.app/decks/
+cp deck.lapse ~/Library/Application\ Support/dev.lapse.app/decks/
 ```
 
 ## Writing a new deck-builder script

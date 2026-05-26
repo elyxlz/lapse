@@ -8,8 +8,9 @@ strips the rest.
 
 ## What lapse is
 
-- **One deck = one `.db` file.** Open it, review, close. No collection database,
-  no profiles, no syncing service.
+- **One deck = one `.lapse` file** (SQLite under the hood). Open it, review,
+  close. No collection database, no profiles, no syncing service. Legacy
+  `.db` files still open for backwards compatibility.
 - **Opinionated schema.** Every card has four fields: `front`, `back`, `audio`
   (BLOB, optional), `tags`. No note types, no card templates, no Mustache.
 - **FSRS scheduling.** Modern algorithm via [rs-fsrs](https://github.com/open-spaced-repetition/rs-fsrs).
@@ -58,13 +59,13 @@ quick path:
 
 ```bash
 # Tiny 5-card sample (smoke test)
-python3 .claude/skills/deck-builder/make_sample_deck.py sample.db
+python3 .claude/skills/deck-builder/make_sample_deck.py sample.lapse
 
 # Convert anki-lebanese Python data into a lapse deck
-python3 .claude/skills/deck-builder/import_lebanese.py lebanese.db
+python3 .claude/skills/deck-builder/import_lebanese.py lebanese.lapse
 
 # Add free neural TTS audio (Microsoft edge-tts, ar-LB-LaylaNeural by default)
-uv run .claude/skills/deck-builder/fetch_edge_tts.py lebanese.db
+uv run .claude/skills/deck-builder/fetch_edge_tts.py lebanese.lapse
 ```
 
 The TTS script is resumable — it only synthesizes cards whose `audio`
@@ -75,9 +76,9 @@ deck folder:
 
 ```bash
 # Linux
-cp lebanese.db ~/.local/share/dev.lapse.app/decks/
+cp lebanese.lapse ~/.local/share/dev.lapse.app/decks/
 # macOS
-cp lebanese.db ~/Library/Application\ Support/dev.lapse.app/decks/
+cp lebanese.lapse ~/Library/Application\ Support/dev.lapse.app/decks/
 ```
 
 ## Development

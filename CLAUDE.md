@@ -7,7 +7,9 @@ choices. Read it before making changes.
 
 ## What lapse is
 
-- **One deck = one `.db` file.** Self-contained: cards + audio BLOBs + FSRS state + review log.
+- **One deck = one `.lapse` file** (SQLite under the hood). Self-contained: cards
+  + audio BLOBs + FSRS state + review log. The app also opens legacy `.db` files
+  so older decks still work, but new ones should use `.lapse`.
 - **Persistent deck folder.** The app scans `<app_data_dir>/decks/` on the home screen
   and lists every valid `.db` it finds. Drop a file in there, restart, it shows up.
   Resolved via Tauri's `app.path().app_data_dir()` — e.g.
@@ -21,12 +23,12 @@ choices. Read it before making changes.
   internally Easy maps to FSRS rating 3 (Good), Hard maps to FSRS rating 1 (Again).
   The 4-button FSRS mode (Hard=2, Easy=4) is intentionally NOT exposed — the user
   prefers low cognitive load over fine-grained scheduling precision.
-- **Custom Again interval (30s).** rs-fsrs's BasicScheduler defaults to 1 minute
-  for the Again learning step. In binary mode at typical pacing (~6 s/card),
-  that means a Hard'd card cycles back ~11 reviews later — too long. The
-  scheduler in `src-tauri/src/scheduler.rs` overrides Again's `due` to
-  `now + 30s` so the card returns within ~5 reviews. Stability/difficulty
-  values from FSRS are kept; only the due timestamp is overridden.
+- **Anki-style stepped learning.** `src-tauri/src/scheduler.rs` walks New
+  and Learning cards through `LEARN_STEPS_MS = [60_000, 600_000]` (1 min,
+  10 min) — same defaults as Anki's `learn_steps = [1.0, 10.0]` minutes.
+  Hard at any step resets to step 0. Easy from the final step graduates
+  the card to Review state with FSRS taking over long-term scheduling.
+  `cards.learn_step` tracks position in the ladder (NULL once graduated).
 - **Keyboard-first.** See keymap below.
 
 ## What lapse explicitly is not
@@ -41,7 +43,7 @@ choices. Read it before making changes.
 If a requested feature would compromise these constraints, push back before
 implementing.
 
-## Schema (v2)
+## Schema (v3)
 
 See `src-tauri/src/schema.sql` for the canonical definition.
 
@@ -51,9 +53,10 @@ cards(
   id, front, back,
   audio BLOB, audio_mime, audio_side,   -- audio_side: 'front'|'back'|'both'|NULL
   tags TEXT,                            -- space-separated
-  state INT, due INT,                   -- FSRS state machine
+  state INT, due INT,                   -- scheduler state machine
   stability REAL, difficulty REAL,
-  reps INT, lapses INT, last_review INT
+  reps INT, lapses INT, last_review INT,
+  learn_step INT                        -- learning-ladder index; NULL = graduated
 )
 review_log(id, card_id, reviewed_at, rating, elapsed_days, scheduled_days, state_before)
 ```
@@ -61,16 +64,17 @@ review_log(id, card_id, reviewed_at, rating, elapsed_days, scheduled_days, state
 - `state`: 0=new, 1=learning, 2=review, 3=relearning
 - `due` and `last_review`: unix milliseconds
 - `tags`: lowercase, space-separated, no commas
-- `audio_side`: which side the audio's content belongs to. The review
-  screen uses this to decide whether to autoplay on appearance or wait
-  until flip (anti-spoiler). Builder scripts MUST set it whenever they
-  populate `audio`. NULL is treated as "unknown" — the app falls back
-  to an RTL heuristic for legacy v1 decks.
+- `audio_side`: which side the audio belongs to; controls autoplay timing.
+- `learn_step`: index into `LEARN_STEPS_MS` in `scheduler.rs`. Tracks where
+  a New/Learning card sits in the `[1m, 10m]` ladder. NULL after graduation
+  to Review.
 
-### Migration v1 → v2
-On open, `db::migrate()` runs `ALTER TABLE cards ADD COLUMN audio_side TEXT`
-if the column is missing, then bumps `meta.schema_version` to '2'.
-Idempotent — safe to call on any deck.
+### Migration history
+- v1 → v2: `ALTER TABLE cards ADD COLUMN audio_side TEXT`
+- v2 → v3: `ALTER TABLE cards ADD COLUMN learn_step INTEGER`
+
+`db::migrate()` runs both unconditionally (idempotent via `pragma_table_info`
+checks) on every `open()`, then bumps `meta.schema_version`.
 
 The Python sample generator (`scripts/make_sample_deck.py`) duplicates the schema —
 keep it in sync with `schema.sql` when changing either.

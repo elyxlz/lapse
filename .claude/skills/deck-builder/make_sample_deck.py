@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate a tiny sample.db conforming to the lapse v2 schema.
+"""Generate a tiny sample.lapse deck conforming to the lapse v3 schema.
 
-Run: python3 .claude/skills/deck-builder/make_sample_deck.py [output.db]
+Run: python3 .claude/skills/deck-builder/make_sample_deck.py [output.lapse]
 
 The output file is a self-contained lapse deck you can open in the app.
 """
@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS cards (
     difficulty    REAL    NOT NULL DEFAULT 0,
     reps          INTEGER NOT NULL DEFAULT 0,
     lapses        INTEGER NOT NULL DEFAULT 0,
-    last_review   INTEGER
+    last_review   INTEGER,
+    learn_step    INTEGER                        -- learning ladder index; NULL once graduated
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_due   ON cards(due);
@@ -61,14 +62,14 @@ CARDS = [
 
 
 def main() -> int:
-    out = Path(sys.argv[1] if len(sys.argv) > 1 else "sample.db")
+    out = Path(sys.argv[1] if len(sys.argv) > 1 else "sample.lapse")
     if out.exists():
         out.unlink()
 
     conn = sqlite3.connect(out)
     conn.executescript(SCHEMA)
     conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '2')"
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '3')"
     )
     conn.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES ('name', 'sample')"
