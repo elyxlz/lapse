@@ -17,8 +17,11 @@ choices. Read it before making changes.
   anywhere on disk without copying it in.
 - **Opinionated, fixed schema.** Four fields per card: `front`, `back`, `audio`, `tags`. No
   note types, no card templates, no Mustache, no field interpolation.
-- **FSRS scheduling** via `rs-fsrs 1.2`. 4-button rating (Again / Hard / Good / Easy).
-- **Keyboard-first.** Space to flip, `1`/`2`/`3`/`4` to rate, `r` to replay audio, `Esc` to leave.
+- **FSRS scheduling** via `rs-fsrs 1.2`. **Binary rating** (Easy / Hard) in the UI;
+  internally Easy maps to FSRS rating 3 (Good), Hard maps to FSRS rating 1 (Again).
+  The 4-button FSRS mode (Hard=2, Easy=4) is intentionally NOT exposed — the user
+  prefers low cognitive load over fine-grained scheduling precision.
+- **Keyboard-first.** See keymap below.
 
 ## What lapse explicitly is not
 
@@ -116,10 +119,20 @@ hard-code colors, sizes, or spacing in component styles.**
 - **Settings:** max-width 640, centered. List items separated by `--border`, not cards.
 
 ### Keyboard map (review screen)
-- `space` / `Enter` — flip on front; rates **Good (3)** on back (Anki convention).
-- `1` / `2` / `3` / `4` — Again / Hard / Good / Easy (only after flip).
+- `space` / `Enter` — flip on front; rates **Easy** on back (default action).
+- `f` — rates **Hard** on back.
 - `r` — replay audio.
+- `t` — toggle session-stats overlay (due / new / learning / total).
+- `Ctrl+Z` / `Cmd+Z` — undo last rating (restores card state + drops the most
+  recent review_log entry). Single-level undo only — only the immediately
+  preceding rating is reversible.
 - `Esc` — back to home.
+
+### Card ordering
+New cards are pulled in **random order** (`ORDER BY ... random()` in the
+new-card branch of next_due_card). This stops bidirectional vocab pairs
+(EN→AR card N and AR→EN card N+1) from appearing back-to-back. Learning and
+review cards still order by `due` ascending.
 
 ## Code conventions
 
@@ -151,6 +164,18 @@ hard-code colors, sizes, or spacing in component styles.**
   `core:window:allow-minimize`, `allow-maximize`, `allow-unmaximize`,
   `allow-is-maximized`, `allow-close`, `allow-start-dragging`.
 - Don't grant capabilities you don't use — keep the list minimal.
+
+### Undo
+
+`commands::undo_rating(card: Card)` takes a full Card snapshot from the
+frontend (the state as it was BEFORE the last rate_card call) and:
+1. Restores all FSRS columns on that row.
+2. Deletes the most recent `review_log` entry for that card.
+
+The frontend holds the snapshot in a single `undoable` slot — only the most
+recent rating is undoable. Don't add a multi-level stack; the FSRS algorithm
+isn't reversible enough for it to be useful, and the UX is clearer with one
+level.
 
 ### Schema changes
 - Bump `meta.schema_version`. The app should refuse to open decks with a higher

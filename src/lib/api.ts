@@ -68,6 +68,7 @@ export const api = {
   nextCard: () => invoke<Card | null>("next_card"),
   rateCard: (id: number, rating: Rating) =>
     invoke<Card | null>("rate_card", { id, rating }),
+  undoRating: (card: Card) => invoke<void>("undo_rating", { card }),
   cardAudio: (id: number) => invoke<AudioBlob | null>("card_audio", { id }),
   listDecks: () => invoke<DeckSummary[]>("list_decks"),
   deckDir: () => invoke<string>("deck_dir"),

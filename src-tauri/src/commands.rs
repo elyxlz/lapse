@@ -96,6 +96,43 @@ pub fn rate_card(id: i64, rating: u8, state: State<AppState>) -> Result<Option<C
 }
 
 #[tauri::command]
+pub fn undo_rating(card: Card, state: State<AppState>) -> Result<(), String> {
+    let guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
+    let (conn, _) = guard.as_ref().ok_or("no deck open")?;
+    // Restore the card row to the snapshot the frontend held before the
+    // last rate_card call.
+    conn.execute(
+        "UPDATE cards SET state = ?1, due = ?2, stability = ?3, difficulty = ?4,
+                          reps = ?5, lapses = ?6, last_review = ?7
+         WHERE id = ?8",
+        rusqlite::params![
+            card.state,
+            card.due,
+            card.stability,
+            card.difficulty,
+            card.reps,
+            card.lapses,
+            card.last_review,
+            card.id,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    // Drop the most recent review_log entry for this card.
+    conn.execute(
+        "DELETE FROM review_log
+         WHERE id = (
+             SELECT id FROM review_log
+             WHERE card_id = ?1
+             ORDER BY reviewed_at DESC, id DESC
+             LIMIT 1
+         )",
+        rusqlite::params![card.id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn card_audio(id: i64, state: State<AppState>) -> Result<Option<AudioBlob>, String> {
     let guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let (conn, _) = guard.as_ref().ok_or("no deck open")?;

@@ -4,6 +4,10 @@
   import { api, audioBlobToUrl, type Card, type Rating } from "$lib/api";
   import { deck, stats } from "$lib/store";
 
+  // Binary rating mode: Easy → FSRS Good(3), Hard → FSRS Again(1).
+  const EASY: Rating = 3;
+  const HARD: Rating = 1;
+
   let current = $state<Card | null>(null);
   let flipped = $state(false);
   let loading = $state(true);
@@ -11,9 +15,12 @@
   let audioUrl: string | null = null;
   let audioEl: HTMLAudioElement;
   let reviewed = $state(0);
+  let flash = $state<{ label: string; tone: "easy" | "hard"; key: number } | null>(null);
+  let undoable = $state<{ card: Card; wasFlipped: boolean } | null>(null);
+  let showStats = $state(false);
 
   function isLikelyRtl(text: string): boolean {
-    return /[֐-ࣿיִ-ﻼ]/.test(text);
+    return /[֐-ࣿיִ-ﻼ]/.test(text);
   }
 
   async function loadAudio(id: number) {
@@ -26,7 +33,7 @@
         audioEl.src = audioUrl;
         audioEl.play().catch(() => {});
       }
-    } catch (e) {
+    } catch {
       // audio failure shouldn't block review
     }
   }
@@ -38,9 +45,9 @@
     }
   }
 
-  function setCard(c: Card | null) {
+  function setCard(c: Card | null, opts: { flipped?: boolean } = {}) {
     current = c;
-    flipped = false;
+    flipped = opts.flipped ?? false;
     if (c?.has_audio) {
       loadAudio(c.id);
     } else {
@@ -60,19 +67,20 @@
   }
 
   async function rate(r: Rating) {
-    // `loading` guard prevents double-submission on rapid keypresses /
-    // clicks: a second event fires before the first invoke resolves, but
-    // after `loading = true` is observable.
     if (!flipped || !current || loading) return;
-    const id = current.id;
+    const cardSnapshot = current;
     loading = true;
+    flash = {
+      label: r === EASY ? "Easy" : "Hard",
+      tone: r === EASY ? "easy" : "hard",
+      key: Date.now(),
+    };
     try {
-      const next = await api.rateCard(id, r);
+      const next = await api.rateCard(cardSnapshot.id, r);
+      undoable = { card: cardSnapshot, wasFlipped: true };
       reviewed += 1;
       setCard(next);
-      if ($deck) {
-        stats.set(await api.deckStats());
-      }
+      if ($deck) stats.set(await api.deckStats());
     } catch (e) {
       error = String(e);
     } finally {
@@ -80,15 +88,26 @@
     }
   }
 
-  function done() {
-    goto("/");
+  async function undo() {
+    if (!undoable || loading) return;
+    loading = true;
+    try {
+      await api.undoRating(undoable.card);
+      setCard(undoable.card, { flipped: undoable.wasFlipped });
+      reviewed = Math.max(0, reviewed - 1);
+      undoable = null;
+      if ($deck) stats.set(await api.deckStats());
+    } catch (e) {
+      error = String(e);
+    } finally {
+      loading = false;
+    }
   }
 
+  function done() { goto("/"); }
+
   onMount(async () => {
-    if (!$deck) {
-      goto("/");
-      return;
-    }
+    if (!$deck) { goto("/"); return; }
     try {
       const c = await api.nextCard();
       setCard(c);
@@ -99,33 +118,29 @@
     }
   });
 
-  onDestroy(() => {
-    revokeAudio();
-  });
+  onDestroy(() => { revokeAudio(); });
 
   function onKeydown(e: KeyboardEvent) {
     if (e.repeat) return;
-    if (e.key === "Escape") {
-      done();
+    if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+      e.preventDefault();
+      undo();
       return;
     }
-    if (e.code === "Space" || e.key === " ") {
+    if (e.key === "Escape") { done(); return; }
+    if (e.key === "t" || e.key === "T") {
       e.preventDefault();
-      if (!flipped) flip();
-      else rate(3); // Anki convention: space after flip = Good
+      showStats = !showStats;
       return;
     }
-    if (e.key === "Enter") {
+    if (e.code === "Space" || e.key === " " || e.key === "Enter") {
       e.preventDefault();
       if (!flipped) flip();
-      else rate(3);
+      else rate(EASY);
       return;
     }
     if (!flipped) return;
-    if (e.key === "1") rate(1);
-    else if (e.key === "2") rate(2);
-    else if (e.key === "3") rate(3);
-    else if (e.key === "4") rate(4);
+    if (e.key === "f" || e.key === "F") rate(HARD);
     else if (e.key === "r") replayAudio();
   }
 </script>
@@ -144,9 +159,13 @@
     <div class="progress">
       <span class="dim">{$deck?.name ?? ""}</span>
       <span class="faint">·</span>
-      <span class="mono">{reviewed} reviewed · {$stats?.due ?? 0} left</span>
+      <span class="mono">{reviewed} done · {$stats?.due ?? 0} left</span>
     </div>
-    <div class="spacer-end"></div>
+    <button class="ghost stats-toggle" onclick={() => (showStats = !showStats)} aria-label="Toggle stats" title="Stats (t)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+      </svg>
+    </button>
   </header>
 
   <section class="card-area">
@@ -182,34 +201,51 @@
     {#if current && !flipped}
       <div class="hint dim"><kbd>space</kbd> to flip</div>
     {:else if current && flipped}
-      <div class="ratings">
-        <button class="rate again" onclick={() => rate(1)}>
-          <span class="rate-key"><kbd>1</kbd></span>
-          <span class="rate-label">Again</span>
-        </button>
-        <button class="rate hard" onclick={() => rate(2)}>
-          <span class="rate-key"><kbd>2</kbd></span>
+      <div class="ratings binary">
+        <button class="rate hard" onclick={() => rate(HARD)}>
           <span class="rate-label">Hard</span>
+          <span class="rate-key"><kbd>f</kbd></span>
         </button>
-        <button class="rate good" onclick={() => rate(3)}>
-          <span class="rate-key"><kbd>3</kbd></span>
-          <span class="rate-label">Good</span>
-        </button>
-        <button class="rate easy" onclick={() => rate(4)}>
-          <span class="rate-key"><kbd>4</kbd></span>
+        <button class="rate easy" onclick={() => rate(EASY)}>
           <span class="rate-label">Easy</span>
+          <span class="rate-key"><kbd>space</kbd></span>
         </button>
       </div>
     {/if}
     {#if error}<div class="error">{error}</div>{/if}
   </footer>
+
+  {#if flash}
+    {#key flash.key}
+      <div class="rating-flash {flash.tone}">{flash.label}</div>
+    {/key}
+  {/if}
+
+  {#if showStats && $stats}
+    <button class="stats-backdrop" onclick={() => (showStats = false)} aria-label="Close stats"></button>
+    <div class="stats-card" role="dialog" aria-label="Session statistics">
+      <div class="stats-row"><span class="stats-num">{reviewed}</span><span class="stats-label">reviewed this session</span></div>
+      <div class="stats-row"><span class="stats-num">{$stats.due}</span><span class="stats-label">due remaining</span></div>
+      <div class="stats-row"><span class="stats-num">{$stats.new}</span><span class="stats-label">new</span></div>
+      <div class="stats-row"><span class="stats-num">{$stats.learning}</span><span class="stats-label">in learning</span></div>
+      <div class="stats-row"><span class="stats-num">{$stats.total}</span><span class="stats-label">total in deck</span></div>
+      <div class="stats-hint dim">press <kbd>t</kbd> or click outside to close</div>
+    </div>
+  {/if}
+
+  {#if undoable}
+    <div class="undo-hint dim">
+      <kbd>⌘</kbd>+<kbd>Z</kbd> to undo last
+    </div>
+  {/if}
 </main>
 
 <style>
   .review {
-    height: 100vh;
+    height: 100%;
     display: grid;
     grid-template-rows: auto 1fr auto;
+    position: relative;
   }
 
   header {
@@ -217,8 +253,9 @@
     align-items: center;
     padding: var(--s-3) var(--s-6);
     border-bottom: 1px solid var(--border);
+    gap: var(--s-3);
   }
-  .back {
+  .back, .stats-toggle {
     padding: var(--s-2);
     line-height: 0;
   }
@@ -231,7 +268,6 @@
     justify-content: center;
     gap: var(--s-2);
   }
-  .spacer-end { width: 30px; }
 
   .card-area {
     display: flex;
@@ -302,48 +338,116 @@
 
   footer {
     padding: var(--s-4) var(--s-6) var(--s-6);
-    min-height: 88px;
+    min-height: 96px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
+  .hint { font-size: var(--t-sm); }
 
-  .hint {
-    font-size: var(--t-sm);
-  }
-
-  .ratings {
+  .ratings.binary {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: 1fr 1fr;
     gap: var(--s-3);
     width: 100%;
-    max-width: 680px;
+    max-width: 520px;
   }
-
   .rate {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--s-1);
-    padding: var(--s-3) var(--s-4);
+    padding: var(--s-4) var(--s-4);
     border: 1px solid var(--border-strong);
     border-radius: var(--r);
     background: var(--bg-elev);
     transition: border-color var(--fast), background var(--fast), transform 80ms ease;
   }
-  .rate:hover    { background: var(--bg-hover); }
-  .rate:active   { transform: translateY(1px); }
-  .rate-key      { line-height: 1; }
-  .rate-label    { font-size: var(--t-sm); font-weight: 500; }
+  .rate:hover  { background: var(--bg-hover); }
+  .rate:active { transform: translateY(1px); }
+  .rate-label  { font-size: var(--t-lg); font-weight: 500; }
+  .rate-key    { font-size: var(--t-xs); color: var(--text-dim); }
 
-  .rate.again:hover { border-color: var(--r-again); color: var(--r-again); }
-  .rate.hard:hover  { border-color: var(--r-hard);  color: var(--r-hard);  }
-  .rate.good:hover  { border-color: var(--r-good);  color: var(--r-good);  }
-  .rate.easy:hover  { border-color: var(--r-easy);  color: var(--r-easy);  }
+  .rate.hard:hover { border-color: var(--r-again); color: var(--r-again); }
+  .rate.easy:hover { border-color: var(--r-good);  color: var(--r-good);  }
 
   .error {
     color: var(--r-again);
     font-size: var(--t-sm);
     margin-top: var(--s-2);
+  }
+
+  .rating-flash {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: var(--t-3xl);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    pointer-events: none;
+    animation: flash-pulse 520ms var(--ease) forwards;
+    z-index: 10;
+  }
+  .rating-flash.hard { color: var(--r-again); }
+  .rating-flash.easy { color: var(--r-good); }
+
+  @keyframes flash-pulse {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+    25%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
+  }
+
+  .stats-backdrop {
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    border: none;
+    z-index: 20;
+    cursor: default;
+  }
+  .stats-card {
+    position: absolute;
+    top: var(--s-12);
+    right: var(--s-6);
+    z-index: 21;
+    background: var(--bg-elev);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-lg);
+    padding: var(--s-4) var(--s-6);
+    min-width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+  }
+  .stats-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-4);
+  }
+  .stats-num {
+    font-size: var(--t-xl);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .stats-label {
+    font-size: var(--t-sm);
+    color: var(--text-dim);
+  }
+  .stats-hint {
+    margin-top: var(--s-2);
+    font-size: var(--t-xs);
+    text-align: center;
+  }
+
+  .undo-hint {
+    position: absolute;
+    bottom: var(--s-2);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: var(--t-xs);
+    opacity: 0.7;
+    pointer-events: none;
   }
 </style>

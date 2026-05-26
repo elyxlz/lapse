@@ -56,9 +56,13 @@ const COLUMN_PROBE: &str = "SELECT id, front, back, audio, audio_mime, tags, \
 
 pub fn open(path: &Path) -> Result<Connection> {
     // Validate the file read-only first so a rejected foreign DB is left
-    // untouched on disk (no journal artifacts written next to it).
-    let exists = path.exists();
-    if exists {
+    // untouched on disk (no journal artifacts written next to it). Skip the
+    // probe for missing or zero-byte files — SQLite refuses to open them
+    // read-only, but the write-mode open below will initialise them cleanly.
+    let needs_probe = std::fs::metadata(path)
+        .map(|m| m.is_file() && m.len() > 0)
+        .unwrap_or(false);
+    if needs_probe {
         let probe = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -121,7 +125,7 @@ pub fn deck_name(conn: &Connection, fallback: &str) -> String {
         })
         .ok();
     match stored {
-        Some(v) if !v.trim().is_empty() => v,
+        Some(v) if !v.trim().is_empty() => v.trim().to_string(),
         _ => fallback.to_string(),
     }
 }
@@ -193,7 +197,7 @@ pub fn next_due_card(conn: &Connection, now: DateTime<Utc>) -> Result<Option<Car
              WHERE (state = 0) OR (state != 0 AND due <= ?1)
              ORDER BY
                  CASE state WHEN 1 THEN 0 WHEN 3 THEN 0 WHEN 2 THEN 1 ELSE 2 END,
-                 due ASC,
+                 CASE WHEN state = 0 THEN random() ELSE due END,
                  id ASC
              LIMIT 1",
             params![now_ms],

@@ -21,7 +21,8 @@
   async function close() { await win.close(); }
 </script>
 
-<div class="titlebar" data-tauri-drag-region>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="titlebar" data-tauri-drag-region role="presentation" ondblclick={toggleMax}>
   <div class="brand" data-tauri-drag-region>lapse</div>
   <div class="controls">
     <button class="ctl min" onclick={minimize} aria-label="Minimize" title="Minimize">

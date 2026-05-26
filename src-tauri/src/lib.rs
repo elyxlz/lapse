@@ -17,6 +17,7 @@ pub fn run() {
             commands::next_card,
             commands::rate_card,
             commands::card_audio,
+            commands::undo_rating,
             commands::list_decks,
             commands::deck_dir,
         ])
