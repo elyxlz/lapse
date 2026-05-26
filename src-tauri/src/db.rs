@@ -27,6 +27,10 @@ pub struct Card {
     /// Index into the scheduler's LEARN_STEPS_MS ladder. None once the
     /// card has graduated to Review (FSRS-managed).
     pub learn_step: Option<i64>,
+    /// Optional usage example shown on the back of the card. Multi-line:
+    /// canonical format is <sentence>\n<transliteration>\n<gloss>, but
+    /// builders can use any text — the UI renders it as a single block.
+    pub example: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,8 +110,12 @@ fn migrate(conn: &Connection) -> Result<()> {
     if !has_col("learn_step")? {
         conn.execute("ALTER TABLE cards ADD COLUMN learn_step INTEGER", [])?;
     }
+    // v3 -> v4: cards.example
+    if !has_col("example")? {
+        conn.execute("ALTER TABLE cards ADD COLUMN example TEXT", [])?;
+    }
     conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '3')",
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '4')",
         [],
     )?;
     Ok(())
@@ -223,7 +231,8 @@ pub fn stats(conn: &Connection, now: DateTime<Utc>) -> Result<DeckStats> {
 
 const CARD_SELECT: &str =
     "SELECT id, front, back, audio IS NOT NULL, audio_side, tags, \
-            state, due, stability, difficulty, reps, lapses, last_review, learn_step \
+            state, due, stability, difficulty, reps, lapses, last_review, learn_step, \
+            example \
      FROM cards";
 
 pub fn next_due_card(conn: &Connection, now: DateTime<Utc>) -> Result<Option<Card>> {
@@ -260,6 +269,7 @@ fn row_to_card(row: &rusqlite::Row) -> rusqlite::Result<Card> {
         lapses: row.get(11)?,
         last_review: row.get(12)?,
         learn_step: row.get(13)?,
+        example: row.get(14)?,
     })
 }
 

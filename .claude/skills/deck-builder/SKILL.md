@@ -51,6 +51,21 @@ source. The patterns to copy:
 python3 .claude/skills/deck-builder/import_lebanese.py output.db
 ```
 
+### `fill_examples.py` — usage-sentence enrichment
+Writes hand-authored example sentences into `cards.example`. The dict
+inside the script maps Arabic head-forms → a three-line block
+(`<sentence>\n<translit>\n<gloss>`). Matching strips harakat and the
+definite article `ال-` so common spelling variants are caught. Only
+fills cards whose `example` column is currently NULL.
+
+```bash
+python3 .claude/skills/deck-builder/fill_examples.py deck.lapse
+```
+
+Extend the EXAMPLES dict to grow coverage. Wrong matches are caused
+by the fuzzy match being too permissive — the current implementation
+only allows: exact, harakat-stripped, definite-article add/strip.
+
 ### `fetch_edge_tts.py` — neural TTS audio
 Populates `audio` BLOB + `audio_mime` for every card whose front or back
 contains text in a target script. The defaults are tuned for Arabic

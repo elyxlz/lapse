@@ -16,6 +16,7 @@ export interface Card {
   lapses: number;
   last_review: number | null;
   learn_step: number | null;
+  example: string | null;
 }
 
 export interface DeckStats {

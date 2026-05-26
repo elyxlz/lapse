@@ -75,13 +75,17 @@
   }
 
   function replayAudio() {
-    // If the BLOB is still loading (audioUrl=null transiently between
-    // cards) but the card claims audio, re-trigger the fetch so r works
-    // even during the small load gap.
-    if (audioEl && audioUrl) {
+    if (!current?.has_audio || !audioEl) return;
+    // Don't replay if the audio's language isn't currently visible:
+    // pressing r on the English front of an EN→AR card would give
+    // away the Arabic answer.
+    const side = audioSide(current);
+    const visible = side === "both" || side === "front" || (side === "back" && flipped);
+    if (!visible) return;
+    if (audioUrl) {
       audioEl.currentTime = 0;
       audioEl.play().catch(() => {});
-    } else if (current?.has_audio) {
+    } else {
       fetchAudio(current.id, true);
     }
   }
@@ -220,6 +224,9 @@
         {#if flipped}
           <hr class="divider"/>
           <div class="face back" class:rtl={rtlBack}>{current.back}</div>
+          {#if current.example}
+            <div class="example">{current.example}</div>
+          {/if}
         {/if}
       </div>
     {:else if loading}
@@ -350,6 +357,20 @@
     width: 64px;
     border-top: 1px solid var(--border-strong);
     margin: 0;
+  }
+
+  .example {
+    margin-top: var(--s-3);
+    padding: var(--s-3) var(--s-4);
+    border-left: 2px solid var(--border-strong);
+    color: var(--text-dim);
+    font-size: var(--t-base);
+    line-height: 1.6;
+    text-align: left;
+    white-space: pre-line;
+    max-width: 560px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .audio-btn {
