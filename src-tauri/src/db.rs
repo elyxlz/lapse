@@ -37,11 +37,46 @@ pub struct DeckMeta {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeckSummary {
+    pub path: String,
+    pub name: String,
+    pub due: i64,
+    pub new: i64,
+    pub total: i64,
+}
+
 pub fn open(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path).with_context(|| format!("opening {:?}", path))?;
     conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
     conn.execute_batch(SCHEMA_SQL)?;
     Ok(conn)
+}
+
+pub fn deck_name(conn: &Connection, fallback: &str) -> String {
+    conn.query_row(
+        "SELECT value FROM meta WHERE key = 'name'",
+        [],
+        |row| row.get::<_, String>(0),
+    )
+    .unwrap_or_else(|_| fallback.to_string())
+}
+
+pub fn summarize(conn: &Connection, path: &Path, now: DateTime<Utc>) -> Result<DeckSummary> {
+    let fallback = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("deck")
+        .to_string();
+    let name = deck_name(conn, &fallback);
+    let s = stats(conn, now)?;
+    Ok(DeckSummary {
+        path: path.to_string_lossy().into_owned(),
+        name,
+        due: s.due,
+        new: s.new,
+        total: s.total,
+    })
 }
 
 pub fn meta(conn: &Connection, path: &Path) -> Result<DeckMeta> {

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
-  import { api, pickDeckFile } from "$lib/api";
+  import { api, pickDeckFile, type DeckSummary } from "$lib/api";
   import { deck, stats } from "$lib/store";
 
+  let decks = $state<DeckSummary[]>([]);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  let opening = $state<string | null>(null);
 
   onMount(async () => {
     try {
@@ -13,17 +15,22 @@
       if (d) {
         deck.set(d);
         stats.set(await api.deckStats());
+      } else {
+        decks = await api.listDecks();
       }
     } catch (e) {
       error = String(e);
     }
   });
 
-  async function openDeck() {
+  async function refreshList() {
+    decks = await api.listDecks();
+  }
+
+  async function openByPath(path: string) {
+    if (opening) return;
+    opening = path;
     error = null;
-    const path = await pickDeckFile();
-    if (!path) return;
-    loading = true;
     try {
       const d = await api.openDeck(path);
       deck.set(d);
@@ -31,14 +38,21 @@
     } catch (e) {
       error = String(e);
     } finally {
-      loading = false;
+      opening = null;
     }
+  }
+
+  async function openExternal() {
+    const path = await pickDeckFile();
+    if (!path) return;
+    await openByPath(path);
   }
 
   async function closeDeck() {
     await api.closeDeck();
     deck.set(null);
     stats.set(null);
+    await refreshList();
   }
 
   function startReview() {
@@ -87,11 +101,36 @@
 
         <button class="ghost small" onclick={closeDeck}>Close deck</button>
       </div>
+    {:else if decks.length > 0}
+      <div class="list-wrap">
+        <ul class="deck-list">
+          {#each decks as d}
+            <li>
+              <button class="deck-row" onclick={() => openByPath(d.path)} disabled={opening === d.path}>
+                <span class="row-name">{d.name}</span>
+                <span class="row-stats dim">
+                  <span>{d.due} due</span>
+                  <span class="dot">·</span>
+                  <span>{d.new} new</span>
+                  <span class="dot">·</span>
+                  <span>{d.total} total</span>
+                </span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+        <button class="ghost small external" onclick={openExternal} disabled={!!opening}>
+          {opening ? "Opening…" : "Open external .db…"}
+        </button>
+      </div>
     {:else}
       <div class="welcome">
-        <div class="welcome-title">No deck open</div>
-        <div class="welcome-sub">Pick a <span class="mono">.db</span> file to review.</div>
-        <button class="primary big" onclick={openDeck} disabled={loading}>
+        <div class="welcome-title">No decks yet</div>
+        <div class="welcome-sub">
+          Drop a <span class="mono">.db</span> file into the lapse deck folder,
+          or open one from anywhere.
+        </div>
+        <button class="primary big" onclick={openExternal} disabled={loading}>
           {loading ? "Opening…" : "Open deck…"}
         </button>
       </div>
@@ -109,7 +148,7 @@
 
 <style>
   .page {
-    height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
     padding: var(--s-6);
@@ -138,6 +177,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-direction: column;
+    gap: var(--s-6);
   }
 
   .welcome {
@@ -146,6 +187,7 @@
     flex-direction: column;
     align-items: center;
     gap: var(--s-4);
+    max-width: 420px;
   }
   .welcome-title {
     font-size: var(--t-xl);
@@ -155,6 +197,7 @@
     color: var(--text-dim);
     font-size: var(--t-sm);
     margin-bottom: var(--s-4);
+    line-height: 1.5;
   }
 
   .deck-card {
@@ -193,6 +236,63 @@
     color: var(--text-dim);
     text-transform: lowercase;
     letter-spacing: 0.05em;
+  }
+
+  .list-wrap {
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-3);
+  }
+
+  .deck-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+  }
+
+  .deck-row {
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-4);
+    padding: var(--s-3) var(--s-4);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--bg-elev);
+    text-align: left;
+    transition: border-color var(--fast), background var(--fast);
+  }
+  .deck-row:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+  }
+  .deck-row:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+  .row-name {
+    font-size: var(--t-base);
+    font-weight: 500;
+  }
+  .row-stats {
+    font-size: var(--t-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+  .dot { color: var(--text-faint); }
+
+  .external {
+    align-self: center;
+    margin-top: var(--s-2);
   }
 
   .big {

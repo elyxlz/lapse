@@ -17,6 +17,8 @@ pub fn run() {
             commands::next_card,
             commands::rate_card,
             commands::card_audio,
+            commands::list_decks,
+            commands::deck_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

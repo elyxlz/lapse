@@ -1,11 +1,11 @@
-use crate::db::{self, Card, DeckMeta, DeckStats};
+use crate::db::{self, Card, DeckMeta, DeckStats, DeckSummary};
 use crate::scheduler;
 use chrono::Utc;
 use rusqlite::Connection;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 pub struct AppState {
     pub conn: Mutex<Option<(Connection, PathBuf)>>,
@@ -102,4 +102,36 @@ pub fn card_audio(id: i64, state: State<AppState>) -> Result<Option<AudioBlob>, 
     Ok(db::get_audio(conn, id)
         .map_err(map_err)?
         .map(|(data, mime)| AudioBlob { data, mime }))
+}
+
+fn resolve_deck_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let dir = base.join("decks");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+#[tauri::command]
+pub fn deck_dir(app: AppHandle) -> Result<String, String> {
+    Ok(resolve_deck_dir(&app)?.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn list_decks(app: AppHandle) -> Result<Vec<DeckSummary>, String> {
+    let dir = resolve_deck_dir(&app)?;
+    let mut out: Vec<DeckSummary> = Vec::new();
+    let entries = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("db") {
+            continue;
+        }
+        // Open briefly to summarize. Skip on error.
+        match db::open(&path).and_then(|c| db::summarize(&c, &path, Utc::now())) {
+            Ok(summary) => out.push(summary),
+            Err(_) => continue,
+        }
+    }
+    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(out)
 }

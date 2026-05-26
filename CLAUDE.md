@@ -8,6 +8,13 @@ choices. Read it before making changes.
 ## What lapse is
 
 - **One deck = one `.db` file.** Self-contained: cards + audio BLOBs + FSRS state + review log.
+- **Persistent deck folder.** The app scans `<app_data_dir>/decks/` on the home screen
+  and lists every valid `.db` it finds. Drop a file in there, restart, it shows up.
+  Resolved via Tauri's `app.path().app_data_dir()` — e.g.
+  `~/.local/share/dev.lapse.app/decks/` on Linux,
+  `~/Library/Application Support/dev.lapse.app/decks/` on macOS.
+- **External decks too.** An "Open external .db…" button picks any `.db` from
+  anywhere on disk without copying it in.
 - **Opinionated, fixed schema.** Four fields per card: `front`, `back`, `audio`, `tags`. No
   note types, no card templates, no Mustache, no field interpolation.
 - **FSRS scheduling** via `rs-fsrs 1.2`. 4-button rating (Again / Hard / Good / Easy).

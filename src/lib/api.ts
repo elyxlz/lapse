@@ -29,6 +29,14 @@ export interface DeckMeta {
   path: string;
 }
 
+export interface DeckSummary {
+  path: string;
+  name: string;
+  due: number;
+  new: number;
+  total: number;
+}
+
 export interface AudioBlob {
   data: number[];
   mime: string;
@@ -61,6 +69,8 @@ export const api = {
   rateCard: (id: number, rating: Rating) =>
     invoke<Card | null>("rate_card", { id, rating }),
   cardAudio: (id: number) => invoke<AudioBlob | null>("card_audio", { id }),
+  listDecks: () => invoke<DeckSummary[]>("list_decks"),
+  deckDir: () => invoke<string>("deck_dir"),
 };
 
 export function audioBlobToUrl(blob: AudioBlob): string {
