@@ -41,15 +41,45 @@ MAX_RETRIES = 3
 RETRY_DELAY = 1.5
 
 
+def first_arabic_line(text: str | None) -> str | None:
+    """First trimmed line in `text` that contains target-script chars."""
+    if not text:
+        return None
+    for line in text.split("\n"):
+        line = line.strip()
+        if line and ARABIC_RE.search(line):
+            return line
+    return None
+
+
+def extract_arabic_side(
+    front: str | None, back: str | None
+) -> tuple[str | None, str | None]:
+    """Return (text, side) where side is 'front' | 'back' | 'both' | None.
+
+    Used both for picking what to synthesize and for tagging the card with
+    which side the audio belongs to (so the app knows whether autoplay on
+    appearance would spoil the prompt).
+    """
+    f = first_arabic_line(front)
+    b = first_arabic_line(back)
+    if f and b:
+        # Same word on both sides (rare) — pick the front so the audio
+        # text is stable, but mark both so playback fires twice.
+        return f, "both"
+    if f:
+        return f, "front"
+    if b:
+        return b, "back"
+    return None, None
+
+
 def extract_arabic(*fields: str) -> str | None:
-    """Return the first line that contains Arabic characters, trimmed."""
+    """Back-compat shim."""
     for text in fields:
-        if not text:
-            continue
-        for line in text.split("\n"):
-            line = line.strip()
-            if line and ARABIC_RE.search(line):
-                return line
+        line = first_arabic_line(text)
+        if line:
+            return line
     return None
 
 
@@ -83,36 +113,56 @@ async def main() -> int:
     conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
 
+    # Backfill audio_side for cards that already have audio from a previous
+    # run (pre-v2 decks). Cheap one-off pass before the main synthesis loop.
+    backfill = conn.execute(
+        "SELECT id, front, back FROM cards "
+        "WHERE audio IS NOT NULL AND audio_side IS NULL"
+    ).fetchall()
+    backfilled = 0
+    for row in backfill:
+        _, side = extract_arabic_side(row["front"], row["back"])
+        if side:
+            conn.execute(
+                "UPDATE cards SET audio_side = ? WHERE id = ?",
+                (side, row["id"]),
+            )
+            backfilled += 1
+    if backfilled:
+        conn.commit()
+        print(f"backfilled audio_side on {backfilled} pre-existing cards")
+
     rows = conn.execute(
         "SELECT id, front, back FROM cards WHERE audio IS NULL"
     ).fetchall()
 
-    # Group cards by the Arabic string they share (vocab is bidirectional,
-    # so the same Arabic word appears on two cards — we synthesize it once
-    # and attach to both).
-    arabic_to_cards: dict[str, list[int]] = {}
+    # Group cards by the target string they share. Each group also tracks
+    # per-card (id, side) so the same audio attached to two bidirectional
+    # cards still gets the correct side flag for each.
+    target_to_cards: dict[str, list[tuple[int, str]]] = {}
     skipped = 0
     for row in rows:
-        ar = extract_arabic(row["front"], row["back"])
-        if ar is None:
+        text, side = extract_arabic_side(row["front"], row["back"])
+        if text is None or side is None:
             skipped += 1
             continue
-        arabic_to_cards.setdefault(ar, []).append(row["id"])
+        target_to_cards.setdefault(text, []).append((row["id"], side))
 
-    total_strings = len(arabic_to_cards)
-    total_cards = sum(len(ids) for ids in arabic_to_cards.values())
+    total_strings = len(target_to_cards)
+    total_cards = sum(len(ids) for ids in target_to_cards.values())
     print(
-        f"voice={voice}  unique_strings={total_strings}  cards_to_update={total_cards}  no_arabic={skipped}"
+        f"voice={voice}  unique_strings={total_strings}  cards_to_update={total_cards}  no_target={skipped}"
     )
     if total_strings == 0:
         print("nothing to do.")
+        conn.close()
         return 0
 
     start = time.monotonic()
     done = 0
     failed: list[tuple[str, str]] = []
 
-    for i, (text, card_ids) in enumerate(arabic_to_cards.items(), 1):
+    for i, (text, card_entries) in enumerate(target_to_cards.items(), 1):
         last_err: str | None = None
         audio: bytes | None = None
         for attempt in range(1, MAX_RETRIES + 1):
@@ -128,8 +178,9 @@ async def main() -> int:
             print(f"[{i}/{total_strings}] FAIL  {text}  ({last_err})", flush=True)
             continue
         conn.executemany(
-            "UPDATE cards SET audio = ?, audio_mime = 'audio/mpeg' WHERE id = ?",
-            [(audio, cid) for cid in card_ids],
+            "UPDATE cards SET audio = ?, audio_mime = 'audio/mpeg', "
+            "audio_side = ? WHERE id = ?",
+            [(audio, side, cid) for cid, side in card_entries],
         )
         conn.commit()
         done += 1
@@ -137,7 +188,7 @@ async def main() -> int:
         rate = done / elapsed if elapsed > 0 else 0
         eta = (total_strings - i) / rate if rate > 0 else 0
         print(
-            f"[{i}/{total_strings}] ok   {text[:30]:30s}  {len(audio):>6}B  ({len(card_ids)} cards)  eta {eta:5.0f}s",
+            f"[{i}/{total_strings}] ok   {text[:30]:30s}  {len(audio):>6}B  ({len(card_entries)} cards)  eta {eta:5.0f}s",
             flush=True,
         )
 

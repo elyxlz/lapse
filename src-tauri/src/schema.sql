@@ -1,7 +1,12 @@
--- lapse deck schema v1
+-- lapse deck schema v2
 --
 -- One .db file per deck. Opinionated minimal: front / back / audio / tags.
 -- FSRS state lives in real columns, not JSON blobs.
+--
+-- v2 added: cards.audio_side — which side of the card the audio belongs to
+--          ('front', 'back', 'both', or NULL when undecided). The app
+--          uses this to decide whether to autoplay on appearance or wait
+--          until flip (prevents spoilers on prompt sides).
 
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
@@ -14,16 +19,17 @@ CREATE TABLE IF NOT EXISTS cards (
     back          TEXT    NOT NULL,
     audio         BLOB,
     audio_mime    TEXT,
+    audio_side    TEXT,                          -- 'front' | 'back' | 'both' | NULL
     tags          TEXT    NOT NULL DEFAULT '',
 
     -- FSRS state
-    state         INTEGER NOT NULL DEFAULT 0,  -- 0=new, 1=learning, 2=review, 3=relearning
-    due           INTEGER NOT NULL DEFAULT 0,  -- unix ms; 0 = never reviewed (new)
+    state         INTEGER NOT NULL DEFAULT 0,
+    due           INTEGER NOT NULL DEFAULT 0,
     stability     REAL    NOT NULL DEFAULT 0,
     difficulty    REAL    NOT NULL DEFAULT 0,
     reps          INTEGER NOT NULL DEFAULT 0,
     lapses        INTEGER NOT NULL DEFAULT 0,
-    last_review   INTEGER  -- unix ms; null if never reviewed
+    last_review   INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_cards_due   ON cards(due);
@@ -42,4 +48,4 @@ CREATE TABLE IF NOT EXISTS review_log (
 CREATE INDEX IF NOT EXISTS idx_review_log_card ON review_log(card_id);
 CREATE INDEX IF NOT EXISTS idx_review_log_time ON review_log(reviewed_at);
 
-INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '2');

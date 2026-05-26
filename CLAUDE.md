@@ -35,7 +35,7 @@ choices. Read it before making changes.
 If a requested feature would compromise these constraints, push back before
 implementing.
 
-## Schema (v1)
+## Schema (v2)
 
 See `src-tauri/src/schema.sql` for the canonical definition.
 
@@ -43,9 +43,9 @@ See `src-tauri/src/schema.sql` for the canonical definition.
 meta(key TEXT PK, value TEXT)
 cards(
   id, front, back,
-  audio BLOB, audio_mime,
-  tags TEXT,                        -- space-separated
-  state INT, due INT,               -- FSRS state machine
+  audio BLOB, audio_mime, audio_side,   -- audio_side: 'front'|'back'|'both'|NULL
+  tags TEXT,                            -- space-separated
+  state INT, due INT,                   -- FSRS state machine
   stability REAL, difficulty REAL,
   reps INT, lapses INT, last_review INT
 )
@@ -55,6 +55,16 @@ review_log(id, card_id, reviewed_at, rating, elapsed_days, scheduled_days, state
 - `state`: 0=new, 1=learning, 2=review, 3=relearning
 - `due` and `last_review`: unix milliseconds
 - `tags`: lowercase, space-separated, no commas
+- `audio_side`: which side the audio's content belongs to. The review
+  screen uses this to decide whether to autoplay on appearance or wait
+  until flip (anti-spoiler). Builder scripts MUST set it whenever they
+  populate `audio`. NULL is treated as "unknown" — the app falls back
+  to an RTL heuristic for legacy v1 decks.
+
+### Migration v1 → v2
+On open, `db::migrate()` runs `ALTER TABLE cards ADD COLUMN audio_side TEXT`
+if the column is missing, then bumps `meta.schema_version` to '2'.
+Idempotent — safe to call on any deck.
 
 The Python sample generator (`scripts/make_sample_deck.py`) duplicates the schema —
 keep it in sync with `schema.sql` when changing either.
@@ -185,12 +195,12 @@ attach the synthesized BLOB to every card sharing that string
 (bidirectional vocab → 2 cards updated per synthesis).
 
 **Autoplay side detection (anti-spoiler).** The review screen does NOT
-autoplay audio on the front side of a card where the audio's language
-appears only on the back — that would spoil a recall prompt. The proxy
-is RTL detection: if the front contains RTL characters, audio plays on
-appearance; if only the back does, audio waits until flip. Manual replay
-(`r` or the ▶ button) works on either side. See `audioSide()` in
-`src/routes/review/+page.svelte`.
+autoplay audio on a side where the audio's content isn't shown — that
+would spoil a recall prompt. Schema v2's `cards.audio_side` column is
+the source of truth (set by builder scripts when they write audio). For
+legacy v1 decks not yet re-baked, `audioSide()` in
+`src/routes/review/+page.svelte` falls back to an RTL heuristic. Manual
+replay (`r` or the ▶ button) works on either side.
 
 To swap voices on an existing deck:
 ```sql

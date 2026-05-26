@@ -24,15 +24,17 @@
   }
 
   /**
-   * Where on the card the audio's language appears. Heuristic: whichever
-   * side has RTL characters. Audio is Arabic-only today; this is the proxy.
-   * For EN→AR cards (English front, Arabic back) the audio belongs to the
-   * back, so autoplaying it on the front would spoil the answer.
+   * Which side of the card the audio belongs to. Prefers the explicit
+   * `audio_side` column written by deck-builder scripts. Falls back to an
+   * RTL heuristic for older v1 decks that haven't been re-baked yet.
    */
-  function audioSide(c: Card): "front" | "back" {
+  function audioSide(c: Card): "front" | "back" | "both" {
+    if (c.audio_side === "front" || c.audio_side === "back" || c.audio_side === "both") {
+      return c.audio_side;
+    }
     if (isLikelyRtl(c.front)) return "front";
     if (isLikelyRtl(c.back)) return "back";
-    return "front"; // monolingual deck — audio is on the prompt
+    return "front";
   }
 
   async function fetchAudio(id: number, autoplay: boolean) {
@@ -61,9 +63,11 @@
     current = c;
     flipped = opts.flipped ?? false;
     if (c?.has_audio) {
-      // Preload either way; only autoplay if the front shows the audio's
-      // language OR the card is being restored already-flipped via undo.
-      const shouldAutoplay = audioSide(c) === "front" || flipped;
+      // Preload either way; autoplay only when the audio belongs to the
+      // side currently visible. Both-sided audio always autoplays on
+      // appearance.
+      const side = audioSide(c);
+      const shouldAutoplay = side === "both" || side === "front" || flipped;
       fetchAudio(c.id, shouldAutoplay);
     } else {
       revokeAudio();
@@ -86,7 +90,8 @@
     if (flipped || !current) return;
     flipped = true;
     // Audio belongs to the back? Now's the time to play it.
-    if (current.has_audio && audioSide(current) === "back" && audioEl && audioUrl) {
+    const side = current.has_audio ? audioSide(current) : null;
+    if ((side === "back" || side === "both") && audioEl && audioUrl) {
       audioEl.currentTime = 0;
       audioEl.play().catch(() => {});
     }

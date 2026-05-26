@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS cards (
     back          TEXT    NOT NULL,
     audio         BLOB,
     audio_mime    TEXT,
+    audio_side    TEXT,                          -- 'front' | 'back' | 'both' | NULL
     tags          TEXT    NOT NULL DEFAULT '',
     state         INTEGER NOT NULL DEFAULT 0,
     due           INTEGER NOT NULL DEFAULT 0,
@@ -198,7 +199,7 @@ def main() -> int:
         "INSERT INTO cards(front, back, tags) VALUES (?, ?, ?)",
         all_cards,
     )
-    conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '1')")
+    conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '2')")
     conn.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES ('name', 'Lebanese Arabic')"
     )

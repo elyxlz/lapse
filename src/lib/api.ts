@@ -6,6 +6,7 @@ export interface Card {
   front: string;
   back: string;
   has_audio: boolean;
+  audio_side: "front" | "back" | "both" | null;
   tags: string[];
   state: number;        // 0 new, 1 learning, 2 review, 3 relearning
   due: number;          // unix ms

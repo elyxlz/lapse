@@ -12,6 +12,10 @@ pub struct Card {
     pub front: String,
     pub back: String,
     pub has_audio: bool,
+    /// Which side the audio's content belongs to: "front", "back", "both",
+    /// or None when undecided (older decks predating schema v2). The
+    /// review screen uses this to choose autoplay timing.
+    pub audio_side: Option<String>,
     pub tags: Vec<String>,
     pub state: i64,
     pub due: i64,
@@ -48,8 +52,9 @@ pub struct DeckSummary {
 
 const EXPECTED_TABLES: &[&str] = &["meta", "cards", "review_log"];
 
-// Probe query: validates that `cards` has every column we read elsewhere.
-// LIMIT 0 means no rows are scanned — purely a schema check.
+// Probe query: validates that `cards` has the columns we ALWAYS read.
+// audio_side (added in v2) is deliberately omitted — older decks will
+// pass validation and then be migrated below.
 const COLUMN_PROBE: &str = "SELECT id, front, back, audio, audio_mime, tags, \
                             state, due, stability, difficulty, reps, lapses, last_review \
                             FROM cards LIMIT 0";
@@ -75,7 +80,28 @@ pub fn open(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path).with_context(|| format!("opening {path:?}"))?;
     conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
     conn.execute_batch(SCHEMA_SQL)?;
+    migrate(&conn)?;
     Ok(conn)
+}
+
+/// In-place migrations for older deck versions. Idempotent.
+fn migrate(conn: &Connection) -> Result<()> {
+    // v1 -> v2: add cards.audio_side. CREATE TABLE IF NOT EXISTS in
+    // schema.sql doesn't touch existing tables, so we need an explicit
+    // ALTER for decks that predate this column.
+    let has_audio_side: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('cards') WHERE name = 'audio_side'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_audio_side == 0 {
+        conn.execute("ALTER TABLE cards ADD COLUMN audio_side TEXT", [])?;
+    }
+    conn.execute(
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '2')",
+        [],
+    )?;
+    Ok(())
 }
 
 fn validate_schema(conn: &Connection) -> Result<()> {
@@ -186,57 +212,51 @@ pub fn stats(conn: &Connection, now: DateTime<Utc>) -> Result<DeckStats> {
     Ok(DeckStats { total, due, new, learning })
 }
 
+const CARD_SELECT: &str =
+    "SELECT id, front, back, audio IS NOT NULL, audio_side, tags, \
+            state, due, stability, difficulty, reps, lapses, last_review \
+     FROM cards";
+
 pub fn next_due_card(conn: &Connection, now: DateTime<Utc>) -> Result<Option<Card>> {
     let now_ms = now.timestamp_millis();
-    // Priority: learning/relearning due now > review due now > new (limited elsewhere by daily cap)
+    let sql = format!(
+        "{CARD_SELECT}
+         WHERE (state = 0) OR (state != 0 AND due <= ?1)
+         ORDER BY
+             CASE state WHEN 1 THEN 0 WHEN 3 THEN 0 WHEN 2 THEN 1 ELSE 2 END,
+             CASE WHEN state = 0 THEN random() ELSE due END,
+             id ASC
+         LIMIT 1"
+    );
     let row = conn
-        .query_row(
-            "SELECT id, front, back, audio IS NOT NULL, tags,
-                    state, due, stability, difficulty, reps, lapses, last_review
-             FROM cards
-             WHERE (state = 0) OR (state != 0 AND due <= ?1)
-             ORDER BY
-                 CASE state WHEN 1 THEN 0 WHEN 3 THEN 0 WHEN 2 THEN 1 ELSE 2 END,
-                 CASE WHEN state = 0 THEN random() ELSE due END,
-                 id ASC
-             LIMIT 1",
-            params![now_ms],
-            row_to_card,
-        )
+        .query_row(&sql, params![now_ms], row_to_card)
         .optional()?;
     Ok(row)
 }
 
 fn row_to_card(row: &rusqlite::Row) -> rusqlite::Result<Card> {
-    let tags: String = row.get(4)?;
+    let tags: String = row.get(5)?;
     Ok(Card {
         id: row.get(0)?,
         front: row.get(1)?,
         back: row.get(2)?,
         has_audio: row.get::<_, bool>(3)?,
-        tags: tags
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect(),
-        state: row.get(5)?,
-        due: row.get(6)?,
-        stability: row.get(7)?,
-        difficulty: row.get(8)?,
-        reps: row.get(9)?,
-        lapses: row.get(10)?,
-        last_review: row.get(11)?,
+        audio_side: row.get(4)?,
+        tags: tags.split_whitespace().map(|s| s.to_string()).collect(),
+        state: row.get(6)?,
+        due: row.get(7)?,
+        stability: row.get(8)?,
+        difficulty: row.get(9)?,
+        reps: row.get(10)?,
+        lapses: row.get(11)?,
+        last_review: row.get(12)?,
     })
 }
 
 pub fn get_card(conn: &Connection, id: i64) -> Result<Option<Card>> {
+    let sql = format!("{CARD_SELECT} WHERE id = ?1");
     let row = conn
-        .query_row(
-            "SELECT id, front, back, audio IS NOT NULL, tags,
-                    state, due, stability, difficulty, reps, lapses, last_review
-             FROM cards WHERE id = ?1",
-            params![id],
-            row_to_card,
-        )
+        .query_row(&sql, params![id], row_to_card)
         .optional()?;
     Ok(row)
 }

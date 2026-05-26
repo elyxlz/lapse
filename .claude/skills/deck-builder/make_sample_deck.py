@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate a tiny sample.db conforming to the lapse v1 schema.
+"""Generate a tiny sample.db conforming to the lapse v2 schema.
 
-Run: python3 scripts/make_sample_deck.py [output.db]
+Run: python3 .claude/skills/deck-builder/make_sample_deck.py [output.db]
 
 The output file is a self-contained lapse deck you can open in the app.
 """
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS cards (
     back          TEXT    NOT NULL,
     audio         BLOB,
     audio_mime    TEXT,
+    audio_side    TEXT,                          -- 'front' | 'back' | 'both' | NULL
     tags          TEXT    NOT NULL DEFAULT '',
     state         INTEGER NOT NULL DEFAULT 0,
     due           INTEGER NOT NULL DEFAULT 0,
@@ -67,7 +68,7 @@ def main() -> int:
     conn = sqlite3.connect(out)
     conn.executescript(SCHEMA)
     conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '1')"
+        "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', '2')"
     )
     conn.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES ('name', 'sample')"
