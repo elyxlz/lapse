@@ -23,7 +23,19 @@
     return /[֐-ࣿיִ-ﻼ]/.test(text);
   }
 
-  async function loadAudio(id: number) {
+  /**
+   * Where on the card the audio's language appears. Heuristic: whichever
+   * side has RTL characters. Audio is Arabic-only today; this is the proxy.
+   * For EN→AR cards (English front, Arabic back) the audio belongs to the
+   * back, so autoplaying it on the front would spoil the answer.
+   */
+  function audioSide(c: Card): "front" | "back" {
+    if (isLikelyRtl(c.front)) return "front";
+    if (isLikelyRtl(c.back)) return "back";
+    return "front"; // monolingual deck — audio is on the prompt
+  }
+
+  async function fetchAudio(id: number, autoplay: boolean) {
     revokeAudio();
     try {
       const blob = await api.cardAudio(id);
@@ -31,7 +43,7 @@
       audioUrl = audioBlobToUrl(blob);
       if (audioEl) {
         audioEl.src = audioUrl;
-        audioEl.play().catch(() => {});
+        if (autoplay) audioEl.play().catch(() => {});
       }
     } catch {
       // audio failure shouldn't block review
@@ -49,7 +61,10 @@
     current = c;
     flipped = opts.flipped ?? false;
     if (c?.has_audio) {
-      loadAudio(c.id);
+      // Preload either way; only autoplay if the front shows the audio's
+      // language OR the card is being restored already-flipped via undo.
+      const shouldAutoplay = audioSide(c) === "front" || flipped;
+      fetchAudio(c.id, shouldAutoplay);
     } else {
       revokeAudio();
     }
@@ -63,12 +78,18 @@
       audioEl.currentTime = 0;
       audioEl.play().catch(() => {});
     } else if (current?.has_audio) {
-      loadAudio(current.id);
+      fetchAudio(current.id, true);
     }
   }
 
   function flip() {
-    if (!flipped && current) flipped = true;
+    if (flipped || !current) return;
+    flipped = true;
+    // Audio belongs to the back? Now's the time to play it.
+    if (current.has_audio && audioSide(current) === "back" && audioEl && audioUrl) {
+      audioEl.currentTime = 0;
+      audioEl.play().catch(() => {});
+    }
   }
 
   async function rate(r: Rating) {

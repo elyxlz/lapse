@@ -184,6 +184,14 @@ scanning front/back lines for the U+0600..U+06FF Unicode block, then
 attach the synthesized BLOB to every card sharing that string
 (bidirectional vocab → 2 cards updated per synthesis).
 
+**Autoplay side detection (anti-spoiler).** The review screen does NOT
+autoplay audio on the front side of a card where the audio's language
+appears only on the back — that would spoil a recall prompt. The proxy
+is RTL detection: if the front contains RTL characters, audio plays on
+appearance; if only the back does, audio waits until flip. Manual replay
+(`r` or the ▶ button) works on either side. See `audioSide()` in
+`src/routes/review/+page.svelte`.
+
 To swap voices on an existing deck:
 ```sql
 UPDATE cards SET audio = NULL, audio_mime = NULL;
