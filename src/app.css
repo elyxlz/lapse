@@ -1,0 +1,215 @@
+/* lapse design system
+ *
+ * Aesthetic references: Linear, Raycast, Things 3, Mochi.
+ * Principles: monochrome palette, hairline borders (not boxes), hierarchy
+ * from size and weight (not color), generous whitespace, keyboard-first,
+ * subtle motion only.
+ */
+
+:root {
+  /* Color — dark, default */
+  --bg:            #0b0b0b;
+  --bg-elev:       #131313;
+  --bg-hover:      #1a1a1a;
+  --bg-active:     #222;
+  --border:        #1d1d1d;
+  --border-strong: #2a2a2a;
+
+  --text:          #ededed;
+  --text-dim:      #8a8a8a;
+  --text-faint:    #555;
+
+  --accent:        #ffffff;        /* primary action — pure white */
+  --accent-text:   #000000;
+
+  /* Rating colors — used sparingly, only on the rating row */
+  --r-again:       #ef4444;
+  --r-hard:        #f59e0b;
+  --r-good:        #10b981;
+  --r-easy:        #3b82f6;
+
+  /* Spacing — 4px scale */
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-6:  24px;
+  --s-8:  32px;
+  --s-12: 48px;
+  --s-16: 64px;
+  --s-24: 96px;
+
+  /* Type */
+  --font:   "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-rtl:  "SF Arabic", "Noto Naskh Arabic", "Amiri", "Scheherazade New", serif;
+
+  --t-xs:  11px;
+  --t-sm:  13px;
+  --t-base: 15px;
+  --t-lg:  18px;
+  --t-xl:  24px;
+  --t-2xl: 36px;
+  --t-3xl: 56px;
+
+  /* Radii */
+  --r-sm: 4px;
+  --r:    6px;
+  --r-lg: 10px;
+  --r-xl: 16px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --fast: 120ms var(--ease);
+  --mid:  200ms var(--ease);
+}
+
+[data-theme="light"] {
+  --bg:            #fafafa;
+  --bg-elev:       #ffffff;
+  --bg-hover:      #f3f3f3;
+  --bg-active:     #e8e8e8;
+  --border:        #e8e8e8;
+  --border-strong: #d4d4d4;
+
+  --text:          #111111;
+  --text-dim:      #6a6a6a;
+  --text-faint:    #a4a4a4;
+
+  --accent:        #0b0b0b;
+  --accent-text:   #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  font-size: var(--t-base);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";   /* Inter stylistic sets */
+  user-select: none;
+}
+
+body {
+  overflow: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  padding: var(--s-2) var(--s-4);
+  cursor: pointer;
+  transition: background var(--fast), border-color var(--fast), color var(--fast);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+button.primary:hover {
+  opacity: 0.9;
+}
+
+button.ghost {
+  color: var(--text-dim);
+}
+
+button.ghost:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+button.outline {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+button.outline:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-faint);
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  line-height: 1;
+}
+
+input, select {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r);
+  padding: var(--s-2) var(--s-3);
+  outline: none;
+  transition: border-color var(--fast);
+}
+
+input:focus, select:focus {
+  border-color: var(--text-dim);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--s-4) 0;
+}
+
+/* Selection */
+::selection {
+  background: var(--text-dim);
+  color: var(--bg);
+}
+
+/* Scrollbars — subtle */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+/* Utility */
+.dim    { color: var(--text-dim); }
+.faint  { color: var(--text-faint); }
+.mono   { font-family: var(--font-mono); }
+.rtl    { font-family: var(--font-rtl); direction: rtl; }
+
+.row    { display: flex; align-items: center; gap: var(--s-3); }
+.col    { display: flex; flex-direction: column; gap: var(--s-3); }
+.spacer { flex: 1; }
