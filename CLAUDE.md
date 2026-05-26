@@ -165,31 +165,30 @@ review cards still order by `due` ascending.
   `allow-is-maximized`, `allow-close`, `allow-start-dragging`.
 - Don't grant capabilities you don't use — keep the list minimal.
 
-### Audio
+### Deck builders & audio
 
-The app plays whatever's in the `cards.audio` BLOB column verbatim
-(no live TTS). Two scripts populate audio for the bundled Lebanese
-deck:
+All deck-building scripts live under `.claude/skills/deck-builder/` as
+a Claude Code skill. See that folder's `SKILL.md` for full usage. Three
+scripts ship:
 
-- `scripts/fetch_edge_tts.py` — Microsoft `edge-tts`, default voice
-  `ar-LB-LaylaNeural`. Free, no signup, neural Lebanese-tagged voices.
-  Resumable (skips cards with non-NULL `audio`). The grey-area-but-
-  widely-used Microsoft endpoint; the Python wrapper is MIT.
-- The same approach works for any language — just change the voice
-  (`edge-tts --list-voices` to enumerate).
+- `make_sample_deck.py` — 5-card smoke-test deck.
+- `import_lebanese.py` — converts the anki-lebanese Python data files
+  into the lapse v1 schema (~1823 cards, bidirectional vocab +
+  conjugations + grammar).
+- `fetch_edge_tts.py` — fills the `audio` BLOB column via Microsoft
+  `edge-tts`. Default `ar-LB-LaylaNeural`. Free, no signup. Resumable.
 
-Audio extraction: the scripts look at each card's `front` and `back`
-text and pull the first line containing Arabic Unicode block
-characters (`U+0600..U+06FF`). Bidirectional vocab cards (EN→AR and
-AR→EN) share the same Arabic string, so the script synthesizes it
-once and attaches the BLOB to both card IDs.
+Audio policy: the app plays whatever's in `cards.audio` verbatim — no
+live TTS. Scripts pre-bake audio. They locate the Arabic string by
+scanning front/back lines for the U+0600..U+06FF Unicode block, then
+attach the synthesized BLOB to every card sharing that string
+(bidirectional vocab → 2 cards updated per synthesis).
 
-If you ever want to swap voices on an existing deck, run:
+To swap voices on an existing deck:
 ```sql
 UPDATE cards SET audio = NULL, audio_mime = NULL;
 ```
-then re-run the script with the new voice arg. Costs another round
-of synthesis but is otherwise clean.
+then re-run `fetch_edge_tts.py` with the new voice argument.
 
 ### Undo
 

@@ -51,25 +51,24 @@ review_log(id, card_id, reviewed_at, rating, elapsed_days, scheduled_days, state
 
 ## Building a deck
 
-Anything that writes SQLite can build a deck. The repo includes a few
-starting points under `scripts/`:
+Anything that writes SQLite in the v1 schema can build a deck. The repo
+ships builder scripts as a Claude Code skill under
+`.claude/skills/deck-builder/` (see its `SKILL.md` for full docs). The
+quick path:
 
 ```bash
-# Tiny 5-card sample
-python3 scripts/make_sample_deck.py sample.db
+# Tiny 5-card sample (smoke test)
+python3 .claude/skills/deck-builder/make_sample_deck.py sample.db
 
-# Convert the anki-lebanese Python data into a lapse deck
-python3 scripts/import_lebanese.py lebanese.db
+# Convert anki-lebanese Python data into a lapse deck
+python3 .claude/skills/deck-builder/import_lebanese.py lebanese.db
 
-# Add neural TTS audio to every Arabic card using Microsoft edge-tts
-# (free, no signup, has Lebanese voices — defaults to ar-LB-LaylaNeural)
-uv run scripts/fetch_edge_tts.py lebanese.db
-# or to use the male voice:
-uv run scripts/fetch_edge_tts.py lebanese.db ar-LB-RamiNeural
+# Add free neural TTS audio (Microsoft edge-tts, ar-LB-LaylaNeural by default)
+uv run .claude/skills/deck-builder/fetch_edge_tts.py lebanese.db
 ```
 
 The TTS script is resumable — it only synthesizes cards whose `audio`
-column is currently NULL, so you can interrupt and rerun.
+column is currently NULL.
 
 To make a deck available inside the app, drop it into the persistent
 deck folder:
