@@ -58,6 +58,14 @@ fn db_card_to_fsrs(card: &DbCard, now: DateTime<Utc>) -> Result<FsrsCard> {
     })
 }
 
+// Short in-session learning step for the Hard (FSRS Again) rating.
+// rs-fsrs's BasicScheduler defaults to 1 minute, which feels too long
+// for the binary review workflow: at ~6 s/card the user can churn
+// through 10 new cards before a Hard'd one cycles back. 30 seconds
+// brings the same card back within roughly 5 reviews, matching Anki-
+// session-style "drill until you get it" behavior.
+const AGAIN_LEARNING_STEP_MS: i64 = 30_000;
+
 pub fn schedule(card: &DbCard, rating_u8: u8, now: DateTime<Utc>) -> Result<ScheduleResult> {
     let rating = rating_from_u8(rating_u8)?;
     let state_before = card.state;
@@ -68,10 +76,16 @@ pub fn schedule(card: &DbCard, rating_u8: u8, now: DateTime<Utc>) -> Result<Sche
     let scheduled = info.card;
     let log = info.review_log;
 
+    let due_ms = if matches!(rating, Rating::Again) {
+        now.timestamp_millis() + AGAIN_LEARNING_STEP_MS
+    } else {
+        scheduled.due.timestamp_millis()
+    };
+
     Ok(ScheduleResult {
         updated: UpdatedCard {
             state: state_to_i64(scheduled.state),
-            due: scheduled.due.timestamp_millis(),
+            due: due_ms,
             stability: scheduled.stability,
             difficulty: scheduled.difficulty,
             reps: scheduled.reps as i64,

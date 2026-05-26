@@ -21,6 +21,12 @@ choices. Read it before making changes.
   internally Easy maps to FSRS rating 3 (Good), Hard maps to FSRS rating 1 (Again).
   The 4-button FSRS mode (Hard=2, Easy=4) is intentionally NOT exposed — the user
   prefers low cognitive load over fine-grained scheduling precision.
+- **Custom Again interval (30s).** rs-fsrs's BasicScheduler defaults to 1 minute
+  for the Again learning step. In binary mode at typical pacing (~6 s/card),
+  that means a Hard'd card cycles back ~11 reviews later — too long. The
+  scheduler in `src-tauri/src/scheduler.rs` overrides Again's `due` to
+  `now + 30s` so the card returns within ~5 reviews. Stability/difficulty
+  values from FSRS are kept; only the due timestamp is overridden.
 - **Keyboard-first.** See keymap below.
 
 ## What lapse explicitly is not
