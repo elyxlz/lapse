@@ -23,6 +23,13 @@ choices. Read it before making changes.
   internally Easy maps to FSRS rating 3 (Good), Hard maps to FSRS rating 1 (Again).
   The 4-button FSRS mode (Hard=2, Easy=4) is intentionally NOT exposed — the user
   prefers low cognitive load over fine-grained scheduling precision.
+- **Usage examples on the back.** `cards.example` is a multi-line string
+  shown below the back text on flipped cards. Built via
+  `fill_examples.py` in the deck-builder skill. Only displayed when
+  non-NULL.
+- **Spoiler-safe replay.** `r` key only plays audio when the audio's
+  side is visible — pressing it on an English front (audio_side='back')
+  before flipping does nothing.
 - **Anki-style stepped learning.** `src-tauri/src/scheduler.rs` walks New
   and Learning cards through `LEARN_STEPS_MS = [60_000, 600_000]` (1 min,
   10 min) — same defaults as Anki's `learn_steps = [1.0, 10.0]` minutes.
@@ -72,6 +79,7 @@ review_log(id, card_id, reviewed_at, rating, elapsed_days, scheduled_days, state
 ### Migration history
 - v1 → v2: `ALTER TABLE cards ADD COLUMN audio_side TEXT`
 - v2 → v3: `ALTER TABLE cards ADD COLUMN learn_step INTEGER`
+- v3 → v4: `ALTER TABLE cards ADD COLUMN example TEXT`
 
 `db::migrate()` runs both unconditionally (idempotent via `pragma_table_info`
 checks) on every `open()`, then bumps `meta.schema_version`.
