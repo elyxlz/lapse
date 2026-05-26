@@ -1,6 +1,6 @@
 ---
 name: deck-builder
-description: Build and audio-fill lapse `.db` decks. Use when the user asks to create a new deck, regenerate the Lebanese deck, add TTS audio to a deck, change voices, or convert outside data into the lapse v1 schema.
+description: Build and audio-fill lapse `.db` decks. Use when the user asks to create a new deck, convert external data into the lapse schema, embed TTS audio, or change voices.
 ---
 
 # deck-builder
@@ -10,107 +10,124 @@ databases in the v1 schema; the app reads them from the persistent deck
 folder or via the "Open external .db…" picker.
 
 Schema is canonical at `src-tauri/src/schema.sql`. Any new script you
-write here must mirror that schema exactly (or use it via `include_str!`
-equivalent).
+write here must mirror that schema exactly.
 
 ## Layout
 
 ```
 .claude/skills/deck-builder/
 ├── SKILL.md                 (this file)
-├── make_sample_deck.py      ← tiny 5-card deck for smoke-testing
-├── import_lebanese.py       ← anki-lebanese Python data → lapse.db
-└── fetch_edge_tts.py        ← edge-tts neural audio → audio BLOBs
+├── make_sample_deck.py      ← minimal example deck (smoke test)
+├── import_lebanese.py       ← example: converts an external Python corpus
+└── fetch_edge_tts.py        ← embeds neural TTS audio in any language
 ```
 
-## When to use each script
+## Scripts
 
-### `make_sample_deck.py` — sanity-check the pipeline
-A 5-card Lebanese phrase deck. Use it after schema or app changes to
-confirm the app still opens a fresh deck.
+### `make_sample_deck.py` — minimal example deck
+Five-card deck with the SCHEMA inlined and a few hardcoded
+`(front, back, tags)` tuples. Use it as a template when adding a new
+builder, or to confirm the app still opens a fresh deck after schema
+changes.
 
 ```bash
 python3 .claude/skills/deck-builder/make_sample_deck.py sample.db
 ```
 
-### `import_lebanese.py` — rebuild the Lebanese deck
-Reads `~/Repos/anki-lebanese/data_{vocab,conjugations,grammar}.py` and
-emits ~1823 cards:
-- Vocab is bidirectional: each entry becomes `EN→AR` and `AR→EN` cards.
-- Conjugations: one card per verb × tense, formatted as plain-text tables.
-- Grammar: HTML tables flattened to tab/newline text.
+### `import_lebanese.py` — example data-import script
+One concrete example of converting an external Python corpus (lists of
+tuples / nested dicts) into a lapse deck. Bidirectional vocab entries
+become two cards (forward and reverse), nested conjugation tables get
+flattened to plain text, and HTML tables in grammar entries are stripped.
 
-Lebanese pronunciation normalization (qaaf→2, emphatics→7/9/6, DH
-restoration) lives in the script — keep it in sync with the original
-`build_deck.py` in the anki-lebanese repo if that ever updates.
+Use it as a reference when writing an importer for your own data
+source. The patterns to copy:
+- bidirectional cards share an entry → emit two rows per source row
+- multi-line content (tables, paradigms) goes into `back` as `\n`-joined
+  text — the app renders it verbatim
+- tags are space-separated and lowercase
 
 ```bash
-python3 .claude/skills/deck-builder/import_lebanese.py lebanese.db
+python3 .claude/skills/deck-builder/import_lebanese.py output.db
 ```
 
-### `fetch_edge_tts.py` — embed neural audio
+### `fetch_edge_tts.py` — neural TTS audio
 Populates `audio` BLOB + `audio_mime` for every card whose front or back
-contains Arabic text (any character in `U+0600..U+06FF`). Uses
-Microsoft's free `edge-tts` endpoint via the MIT-licensed Python wrapper.
-Default voice is `ar-LB-LaylaNeural` (Lebanese female neural).
+contains text in a target script. The defaults are tuned for Arabic
+(scans for `U+0600..U+06FF`); change `ARABIC_RE` and `DEFAULT_VOICE` to
+target a different language.
+
+Uses Microsoft's free `edge-tts` endpoint via the MIT-licensed Python
+wrapper — no signup, no key, no rate cap beyond the upstream service's
+throttling.
 
 ```bash
-uv run .claude/skills/deck-builder/fetch_edge_tts.py lebanese.db
-# Male voice:
-uv run .claude/skills/deck-builder/fetch_edge_tts.py lebanese.db ar-LB-RamiNeural
-# Other languages: edge-tts --list-voices  (e.g. fr-FR-DeniseNeural, es-ES-ElviraNeural)
+uv run .claude/skills/deck-builder/fetch_edge_tts.py deck.db
+# Pick a different voice:
+uv run .claude/skills/deck-builder/fetch_edge_tts.py deck.db fr-FR-DeniseNeural
+# Enumerate all voices:
+uv run edge-tts --list-voices
 ```
 
 **Resumable.** The script only updates cards where `audio IS NULL`, so
-interrupting and re-running picks up where it left off.
+interrupting and re-running picks up the remainder. Failed strings stay
+NULL and a re-run retries them.
 
-**Bidirectional-aware.** A vocab entry produces two cards sharing the
-same Arabic string; the script synthesizes once and attaches the same
-BLOB to both card IDs.
+**Dedup-aware.** When multiple cards share the same target text
+(bidirectional vocab pairs do), the script synthesizes once and attaches
+the same BLOB to every matching card ID.
 
 **To replace audio on an existing deck** (e.g. switching voices):
 ```sql
 UPDATE cards SET audio = NULL, audio_mime = NULL;
 ```
-then re-run the script with the new voice.
+then re-run the script with the new voice argument.
 
 ## Deploying a deck
 
-The app scans the persistent deck folder on the home screen. Drop your
+The app scans a persistent deck folder on the home screen. Drop your
 finished `.db` there:
 
 ```bash
 # Linux
-cp lebanese.db ~/.local/share/dev.lapse.app/decks/
+cp deck.db ~/.local/share/dev.lapse.app/decks/
 
 # macOS
-cp lebanese.db ~/Library/Application\ Support/dev.lapse.app/decks/
+cp deck.db ~/Library/Application\ Support/dev.lapse.app/decks/
 ```
 
 ## Writing a new deck-builder script
 
-Mirror the SCHEMA constant from `make_sample_deck.py` exactly (or read
-`src-tauri/src/schema.sql` and `execute_script` it). Insert rows with
-`INSERT INTO cards(front, back, tags) VALUES (?, ?, ?)` and leave the
-FSRS columns at their defaults — the app initializes them on first
-review.
-
-Don't set `audio` directly from a builder script unless you're sure of
-the mime type. Prefer running `fetch_edge_tts.py` as a separate pass so
-the audio policy stays in one place.
-
-Tags are **space-separated strings** (not arrays, not JSON). Lowercase,
-no commas. Multi-word tags use underscores.
+1. Mirror the SCHEMA constant from `make_sample_deck.py` exactly (or
+   read `src-tauri/src/schema.sql` and `executescript` it).
+2. Insert rows with `INSERT INTO cards(front, back, tags) VALUES (?, ?, ?)`
+   and leave the FSRS columns at their defaults — the app initializes
+   them on first review.
+3. Don't set `audio` from the builder script unless you're sure of the
+   mime type. Prefer running `fetch_edge_tts.py` as a separate pass so
+   the audio policy stays in one place.
+4. Tags are **space-separated strings** — not arrays, not JSON.
+   Lowercase, no commas. Multi-word tags use underscores.
+5. Set `meta.name` if you want the home-screen list to show a friendly
+   name instead of the filename stem.
 
 ## Common voices
 
-| Voice ID                | Language | Notes |
-|-------------------------|----------|-------|
-| `ar-LB-LaylaNeural`     | Lebanese | Female. Default. |
-| `ar-LB-RamiNeural`      | Lebanese | Male. |
-| `ar-EG-SalmaNeural`     | Egyptian | Useful for MSA-leaning content. |
-| `ar-SA-ZariyahNeural`   | Saudi/MSA | Standard MSA reference. |
-| `fr-FR-DeniseNeural`    | French   | If you build a French deck. |
-| `es-ES-ElviraNeural`    | Spanish  | If you build a Spanish deck. |
+`fetch_edge_tts.py` works with any `edge-tts` voice ID. A few examples:
+
+| Voice ID                | Language |
+|-------------------------|----------|
+| `en-US-AriaNeural`      | English (US) — female |
+| `en-GB-RyanNeural`      | English (UK) — male |
+| `fr-FR-DeniseNeural`    | French |
+| `es-ES-ElviraNeural`    | Spanish (Castilian) |
+| `de-DE-KatjaNeural`     | German |
+| `it-IT-ElsaNeural`      | Italian |
+| `ja-JP-NanamiNeural`    | Japanese |
+| `zh-CN-XiaoxiaoNeural`  | Mandarin |
+| `ar-SA-ZariyahNeural`   | Arabic (MSA reference) |
+| `ar-EG-SalmaNeural`     | Egyptian Arabic |
+| `ar-LB-LaylaNeural`     | Levantine Arabic (female) |
+| `ar-LB-RamiNeural`      | Levantine Arabic (male) |
 
 Run `uv run edge-tts --list-voices` for the full list.
