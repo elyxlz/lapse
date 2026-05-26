@@ -46,8 +46,36 @@ pub struct DeckSummary {
     pub total: i64,
 }
 
+const EXPECTED_TABLES: &[&str] = &["meta", "cards", "review_log"];
+
 pub fn open(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path).with_context(|| format!("opening {:?}", path))?;
+
+    // Refuse to mutate foreign databases: if there are any user tables that
+    // aren't part of lapse's schema, bail before we run CREATE TABLE on it.
+    let existing: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT name FROM sqlite_master \
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        )?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    let unexpected: Vec<&String> = existing
+        .iter()
+        .filter(|n| !EXPECTED_TABLES.contains(&n.as_str()))
+        .collect();
+    if !unexpected.is_empty() {
+        anyhow::bail!(
+            "not a lapse deck: file contains unexpected tables ({})",
+            unexpected
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
     conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
     conn.execute_batch(SCHEMA_SQL)?;
     Ok(conn)
@@ -185,11 +213,10 @@ pub fn get_audio(conn: &Connection, id: i64) -> Result<Option<(Vec<u8>, String)>
             },
         )
         .optional()?;
+    // Require both audio + audio_mime. We don't guess the format — a deck
+    // that stores BLOBs without setting the mime is malformed.
     match row {
-        Some((Some(bytes), mime)) => Ok(Some((
-            bytes,
-            mime.unwrap_or_else(|| "audio/mpeg".to_string()),
-        ))),
+        Some((Some(bytes), Some(mime))) => Ok(Some((bytes, mime))),
         _ => Ok(None),
     }
 }

@@ -1,5 +1,5 @@
 use crate::db::{Card as DbCard, UpdatedCard};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use rs_fsrs::{Card as FsrsCard, Rating, State, FSRS};
 
@@ -33,14 +33,19 @@ fn state_to_i64(s: State) -> i64 {
     s as i64
 }
 
-fn ms_to_dt(ms: i64) -> DateTime<Utc> {
-    Utc.timestamp_millis_opt(ms).single().unwrap_or_else(Utc::now)
+fn ms_to_dt(ms: i64) -> Result<DateTime<Utc>> {
+    Utc.timestamp_millis_opt(ms)
+        .single()
+        .ok_or_else(|| anyhow!("timestamp out of range: {ms}"))
 }
 
-fn db_card_to_fsrs(card: &DbCard, now: DateTime<Utc>) -> FsrsCard {
-    let last_review = card.last_review.map(ms_to_dt).unwrap_or(now);
-    let due = if card.state == 0 { now } else { ms_to_dt(card.due) };
-    FsrsCard {
+fn db_card_to_fsrs(card: &DbCard, now: DateTime<Utc>) -> Result<FsrsCard> {
+    let last_review = match card.last_review {
+        Some(ms) => ms_to_dt(ms)?,
+        None => now,
+    };
+    let due = if card.state == 0 { now } else { ms_to_dt(card.due)? };
+    Ok(FsrsCard {
         due,
         stability: card.stability,
         difficulty: card.difficulty,
@@ -50,13 +55,13 @@ fn db_card_to_fsrs(card: &DbCard, now: DateTime<Utc>) -> FsrsCard {
         lapses: card.lapses as i32,
         state: state_from_i64(card.state),
         last_review,
-    }
+    })
 }
 
 pub fn schedule(card: &DbCard, rating_u8: u8, now: DateTime<Utc>) -> Result<ScheduleResult> {
     let rating = rating_from_u8(rating_u8)?;
     let state_before = card.state;
-    let fsrs_card = db_card_to_fsrs(card, now);
+    let fsrs_card = db_card_to_fsrs(card, now)?;
 
     let fsrs = FSRS::default();
     let info = fsrs.next(fsrs_card, now, rating);

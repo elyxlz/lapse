@@ -60,7 +60,10 @@
   }
 
   async function rate(r: Rating) {
-    if (!flipped || !current) return;
+    // `loading` guard prevents double-submission on rapid keypresses /
+    // clicks: a second event fires before the first invoke resolves, but
+    // after `loading = true` is observable.
+    if (!flipped || !current || loading) return;
     const id = current.id;
     loading = true;
     try {

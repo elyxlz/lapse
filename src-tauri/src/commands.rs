@@ -34,21 +34,21 @@ pub fn open_deck(path: String, state: State<AppState>) -> Result<DeckMeta, Strin
     let path = PathBuf::from(path);
     let conn = db::open(&path).map_err(map_err)?;
     let meta = db::meta(&conn, &path).map_err(map_err)?;
-    let mut guard = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     *guard = Some((conn, path));
     Ok(meta)
 }
 
 #[tauri::command]
 pub fn close_deck(state: State<AppState>) -> Result<(), String> {
-    let mut guard = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     *guard = None;
     Ok(())
 }
 
 #[tauri::command]
 pub fn current_deck(state: State<AppState>) -> Result<Option<DeckMeta>, String> {
-    let guard = state.conn.lock().map_err(|e| e.to_string())?;
+    let guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     match guard.as_ref() {
         Some((conn, path)) => Ok(Some(db::meta(conn, path).map_err(map_err)?)),
         None => Ok(None),
@@ -57,21 +57,21 @@ pub fn current_deck(state: State<AppState>) -> Result<Option<DeckMeta>, String> 
 
 #[tauri::command]
 pub fn deck_stats(state: State<AppState>) -> Result<DeckStats, String> {
-    let guard = state.conn.lock().map_err(|e| e.to_string())?;
+    let guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let (conn, _) = guard.as_ref().ok_or("no deck open")?;
     db::stats(conn, Utc::now()).map_err(map_err)
 }
 
 #[tauri::command]
 pub fn next_card(state: State<AppState>) -> Result<Option<Card>, String> {
-    let guard = state.conn.lock().map_err(|e| e.to_string())?;
+    let guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let (conn, _) = guard.as_ref().ok_or("no deck open")?;
     db::next_due_card(conn, Utc::now()).map_err(map_err)
 }
 
 #[tauri::command]
 pub fn rate_card(id: i64, rating: u8, state: State<AppState>) -> Result<Option<Card>, String> {
-    let mut guard = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let (conn, _) = guard.as_mut().ok_or("no deck open")?;
 
     let card = db::get_card(conn, id)
@@ -97,7 +97,7 @@ pub fn rate_card(id: i64, rating: u8, state: State<AppState>) -> Result<Option<C
 
 #[tauri::command]
 pub fn card_audio(id: i64, state: State<AppState>) -> Result<Option<AudioBlob>, String> {
-    let guard = state.conn.lock().map_err(|e| e.to_string())?;
+    let guard = state.conn.lock().unwrap_or_else(|e| e.into_inner());
     let (conn, _) = guard.as_ref().ok_or("no deck open")?;
     Ok(db::get_audio(conn, id)
         .map_err(map_err)?

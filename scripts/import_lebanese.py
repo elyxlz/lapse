@@ -78,6 +78,8 @@ def normalize_lebanese(translit: str) -> str:
     s = re.sub(r"H", "7", s)
     s = re.sub(r"S", "9", s)
     s = re.sub(r"T", "6", s)
+    # Restore DH (ظ) which the H->7 substitution above would have mangled.
+    s = s.replace("D7", "DH")
     return s
 
 
@@ -119,6 +121,10 @@ def build_vocab_cards(rows: list[tuple]) -> list[tuple[str, str, str]]:
 
 def format_conjugation_table(forms: list[tuple[str, str]]) -> str:
     """forms is 8 (arabic, translit) entries aligned with PRONOUNS."""
+    if len(forms) != len(PRONOUNS):
+        raise ValueError(
+            f"expected {len(PRONOUNS)} conjugation forms, got {len(forms)}: {forms!r}"
+        )
     rows = []
     for (pronoun, gloss), (ar, tr) in zip(PRONOUNS, forms):
         lev = normalize_lebanese(tr)
