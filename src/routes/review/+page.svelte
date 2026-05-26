@@ -56,9 +56,14 @@
   }
 
   function replayAudio() {
+    // If the BLOB is still loading (audioUrl=null transiently between
+    // cards) but the card claims audio, re-trigger the fetch so r works
+    // even during the small load gap.
     if (audioEl && audioUrl) {
       audioEl.currentTime = 0;
       audioEl.play().catch(() => {});
+    } else if (current?.has_audio) {
+      loadAudio(current.id);
     }
   }
 
@@ -133,6 +138,12 @@
       showStats = !showStats;
       return;
     }
+    if (e.key === "r" || e.key === "R") {
+      // Replay should work on both front and back — pressing r before
+      // flipping is a common "play it again so I can guess" move.
+      replayAudio();
+      return;
+    }
     if (e.code === "Space" || e.key === " " || e.key === "Enter") {
       e.preventDefault();
       if (!flipped) flip();
@@ -141,7 +152,6 @@
     }
     if (!flipped) return;
     if (e.key === "f" || e.key === "F") rate(HARD);
-    else if (e.key === "r") replayAudio();
   }
 </script>
 

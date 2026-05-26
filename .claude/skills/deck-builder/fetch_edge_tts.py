@@ -27,7 +27,11 @@ from pathlib import Path
 
 import edge_tts
 
-ARABIC_RE = re.compile(r"[؀-ۿ]")
+# Covers Arabic, Arabic Supplement, Arabic Extended-A, and both
+# Arabic Presentation Forms blocks. Adapt for other languages.
+ARABIC_RE = re.compile(
+    r"[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]"
+)
 DEFAULT_VOICE = "ar-LB-LaylaNeural"
 
 # edge-tts can transiently fail; retry a handful of times before giving up
@@ -74,7 +78,9 @@ async def main() -> int:
         print(f"no such file: {db_path}", file=sys.stderr)
         return 1
 
-    conn = sqlite3.connect(db_path)
+    # `timeout` lets the script wait if the lapse app currently has the
+    # deck open in WAL mode rather than crashing on SQLITE_BUSY.
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
 
     rows = conn.execute(

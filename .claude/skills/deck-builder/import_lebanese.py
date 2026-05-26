@@ -165,6 +165,25 @@ def build_grammar_cards() -> list[tuple[str, str, str]]:
 def main() -> int:
     out_path = Path(sys.argv[1] if len(sys.argv) > 1 else "lebanese.db")
     if out_path.exists():
+        # Warn loudly if we're about to clobber a deck that already has
+        # audio — re-running this script deletes the file outright and
+        # any TTS work has to be redone from scratch.
+        try:
+            existing = sqlite3.connect(out_path)
+            (audio_count,) = existing.execute(
+                "SELECT COUNT(*) FROM cards WHERE audio IS NOT NULL"
+            ).fetchone()
+            existing.close()
+            if audio_count > 0:
+                print(
+                    f"warning: {out_path} has {audio_count} cards with audio "
+                    "that will be deleted. Re-run fetch_edge_tts.py after "
+                    "this to repopulate.",
+                    file=sys.stderr,
+                )
+        except sqlite3.Error:
+            # Not a valid SQLite file or table missing — nothing to warn about.
+            pass
         out_path.unlink()
 
     conn = sqlite3.connect(out_path)
