@@ -165,6 +165,32 @@ review cards still order by `due` ascending.
   `allow-is-maximized`, `allow-close`, `allow-start-dragging`.
 - Don't grant capabilities you don't use — keep the list minimal.
 
+### Audio
+
+The app plays whatever's in the `cards.audio` BLOB column verbatim
+(no live TTS). Two scripts populate audio for the bundled Lebanese
+deck:
+
+- `scripts/fetch_edge_tts.py` — Microsoft `edge-tts`, default voice
+  `ar-LB-LaylaNeural`. Free, no signup, neural Lebanese-tagged voices.
+  Resumable (skips cards with non-NULL `audio`). The grey-area-but-
+  widely-used Microsoft endpoint; the Python wrapper is MIT.
+- The same approach works for any language — just change the voice
+  (`edge-tts --list-voices` to enumerate).
+
+Audio extraction: the scripts look at each card's `front` and `back`
+text and pull the first line containing Arabic Unicode block
+characters (`U+0600..U+06FF`). Bidirectional vocab cards (EN→AR and
+AR→EN) share the same Arabic string, so the script synthesizes it
+once and attaches the BLOB to both card IDs.
+
+If you ever want to swap voices on an existing deck, run:
+```sql
+UPDATE cards SET audio = NULL, audio_mime = NULL;
+```
+then re-run the script with the new voice arg. Costs another round
+of synthesis but is otherwise clean.
+
 ### Undo
 
 `commands::undo_rating(card: Card)` takes a full Card snapshot from the
