@@ -126,10 +126,15 @@ pub fn list_decks(app: AppHandle) -> Result<Vec<DeckSummary>, String> {
         if path.extension().and_then(|s| s.to_str()) != Some("db") {
             continue;
         }
-        // Open briefly to summarize. Skip on error.
+        // Open briefly to summarize. Files that aren't valid lapse decks are
+        // skipped (logged for visibility in dev) so a stray .db doesn't kill
+        // the whole listing.
         match db::open(&path).and_then(|c| db::summarize(&c, &path, Utc::now())) {
             Ok(summary) => out.push(summary),
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("[lapse] skipping {}: {e:#}", path.display());
+                continue;
+            }
         }
     }
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -48,11 +48,33 @@ pub struct DeckSummary {
 
 const EXPECTED_TABLES: &[&str] = &["meta", "cards", "review_log"];
 
-pub fn open(path: &Path) -> Result<Connection> {
-    let conn = Connection::open(path).with_context(|| format!("opening {:?}", path))?;
+// Probe query: validates that `cards` has every column we read elsewhere.
+// LIMIT 0 means no rows are scanned — purely a schema check.
+const COLUMN_PROBE: &str = "SELECT id, front, back, audio, audio_mime, tags, \
+                            state, due, stability, difficulty, reps, lapses, last_review \
+                            FROM cards LIMIT 0";
 
-    // Refuse to mutate foreign databases: if there are any user tables that
-    // aren't part of lapse's schema, bail before we run CREATE TABLE on it.
+pub fn open(path: &Path) -> Result<Connection> {
+    // Validate the file read-only first so a rejected foreign DB is left
+    // untouched on disk (no journal artifacts written next to it).
+    let exists = path.exists();
+    if exists {
+        let probe = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .with_context(|| format!("opening {path:?} for validation"))?;
+        validate_schema(&probe)?;
+        drop(probe);
+    }
+
+    let conn = Connection::open(path).with_context(|| format!("opening {path:?}"))?;
+    conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+    conn.execute_batch(SCHEMA_SQL)?;
+    Ok(conn)
+}
+
+fn validate_schema(conn: &Connection) -> Result<()> {
     let existing: Vec<String> = {
         let mut stmt = conn.prepare(
             "SELECT name FROM sqlite_master \
@@ -61,6 +83,12 @@ pub fn open(path: &Path) -> Result<Connection> {
         let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
         rows.collect::<rusqlite::Result<_>>()?
     };
+
+    // Empty file: nothing to validate, we'll create the schema afterwards.
+    if existing.is_empty() {
+        return Ok(());
+    }
+
     let unexpected: Vec<&String> = existing
         .iter()
         .filter(|n| !EXPECTED_TABLES.contains(&n.as_str()))
@@ -76,18 +104,26 @@ pub fn open(path: &Path) -> Result<Connection> {
         );
     }
 
-    conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
-    conn.execute_batch(SCHEMA_SQL)?;
-    Ok(conn)
+    // Tables exist; verify the columns we depend on are actually there.
+    // If `cards` is missing any column the probe references, prepare() errors.
+    if existing.iter().any(|n| n == "cards") {
+        conn.prepare(COLUMN_PROBE)
+            .context("not a lapse deck: cards table has unexpected schema")?;
+    }
+
+    Ok(())
 }
 
 pub fn deck_name(conn: &Connection, fallback: &str) -> String {
-    conn.query_row(
-        "SELECT value FROM meta WHERE key = 'name'",
-        [],
-        |row| row.get::<_, String>(0),
-    )
-    .unwrap_or_else(|_| fallback.to_string())
+    let stored: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key = 'name'", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .ok();
+    match stored {
+        Some(v) if !v.trim().is_empty() => v,
+        _ => fallback.to_string(),
+    }
 }
 
 pub fn summarize(conn: &Connection, path: &Path, now: DateTime<Utc>) -> Result<DeckSummary> {

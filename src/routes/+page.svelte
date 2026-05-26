@@ -10,16 +10,25 @@
   let opening = $state<string | null>(null);
 
   onMount(async () => {
+    let d: Awaited<ReturnType<typeof api.currentDeck>> = null;
     try {
-      const d = await api.currentDeck();
-      if (d) {
-        deck.set(d);
-        stats.set(await api.deckStats());
-      } else {
-        decks = await api.listDecks();
-      }
+      d = await api.currentDeck();
     } catch (e) {
       error = String(e);
+    }
+    if (d) {
+      deck.set(d);
+      try {
+        stats.set(await api.deckStats());
+      } catch (e) {
+        error = String(e);
+      }
+    } else {
+      try {
+        decks = await api.listDecks();
+      } catch (e) {
+        error = String(e);
+      }
     }
   });
 
@@ -49,10 +58,15 @@
   }
 
   async function closeDeck() {
+    error = null;
     await api.closeDeck();
     deck.set(null);
     stats.set(null);
-    await refreshList();
+    try {
+      await refreshList();
+    } catch (e) {
+      error = String(e);
+    }
   }
 
   function startReview() {
@@ -104,7 +118,7 @@
     {:else if decks.length > 0}
       <div class="list-wrap">
         <ul class="deck-list">
-          {#each decks as d}
+          {#each decks as d (d.path)}
             <li>
               <button class="deck-row" onclick={() => openByPath(d.path)} disabled={opening === d.path}>
                 <span class="row-name">{d.name}</span>
